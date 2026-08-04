@@ -1,0 +1,6 @@
+[submodule "engines/hook-engine"]
+	path = engines/hook-engine
+	url = https://github.com/nbt040922-stack/AI_hook_engine.git
+[submodule "engines/review-engine"]
+	path = engines/review-engine
+	url = https://github.com/nbt040922-stack/video-short-workflow.git

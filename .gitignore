@@ -1,0 +1,46 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyd
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+build/
+dist/
+*.egg-info/
+
+# Editors and operating systems
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+
+# Runtime workspace and temporary output
+workspace/*
+!workspace/.gitkeep
+tmp/
+temp/
+*.tmp
+*.log
+
+# Generated media and FFmpeg artifacts
+*.mp4
+*.mov
+*.mkv
+*.webm
+*.avi
+*.wav
+*.mp3
+*.aac
+*.m4a
+*.ffconcat
+ffmpeg2pass-*
