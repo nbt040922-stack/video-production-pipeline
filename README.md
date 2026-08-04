@@ -103,3 +103,22 @@ No orchestrator is implemented yet. Its future entry point will be run as:
 ```bash
 python -m apps.orchestrator
 ```
+## Frontend prototype
+
+The desktop-first React prototype runs entirely in mock mode. It does not call either engine or any external media service.
+
+```bash
+npm install
+npm run dev
+```
+
+Validation commands:
+
+```bash
+npm test
+npm run build
+```
+
+See [docs/FRONTEND_ARCHITECTURE.md](docs/FRONTEND_ARCHITECTURE.md) for the component model and future backend integration points.
+
+No screenshot is stored yet. If one is added later, use `docs/screenshots/frontend.png`.
