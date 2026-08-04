@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
+from apps.orchestrator.adapters import StubSourceIngestor
 from apps.orchestrator.api import create_app
 from apps.orchestrator.job_manager import JobManager
 
@@ -13,9 +14,13 @@ VALID_URL = "https://www.youtube.com/watch?v=demo123"
 FAIL_URL = "https://youtu.be/demo123?fixture=fail"
 
 
+def make_manager(path: Path, delay: float = 0.01) -> JobManager:
+    return JobManager(path, step_delay=delay, source_ingestor=StubSourceIngestor(delay))
+
+
 @pytest.fixture
 def manager(tmp_path: Path) -> JobManager:
-    return JobManager(tmp_path, step_delay=0.01)
+    return make_manager(tmp_path)
 
 
 @pytest.fixture
@@ -43,6 +48,7 @@ def test_health(client: TestClient) -> None:
     response = client.get("/api/health")
     assert response.status_code == 200
     assert response.json()["status"] == "ok"
+    assert response.json()["dependencies"]["source_ingestor"]["status"] == "stub_ready"
     assert response.json()["dependencies"]["hook_engine"] == "stub_ready"
 
 
@@ -72,12 +78,17 @@ def test_job_progresses_and_completes_with_output(client: TestClient, manager: J
     assert job["progress_percentage"] == 100
     assert all(stage["status"] == "completed" for stage in job["stages"])
     assert job["output"]["filename"] == "final_video.mp4"
+    assert job["source"]["youtube_video_id"] == "stub-video"
+    assert job["source"]["thumbnail_url"] == f"/api/jobs/{job['job_id']}/assets/thumbnail"
     assert (manager.workspace / job["output"]["relative_path"]).is_file()
+    thumbnail = client.get(f"/api/jobs/{job['job_id']}/assets/thumbnail")
+    assert thumbnail.status_code == 200
+    assert thumbnail.headers["content-type"] == "image/jpeg"
     assert (manager.workspace / job["job_id"] / "logs" / "pipeline.log").is_file()
 
 
 def test_cancellation(tmp_path: Path) -> None:
-    manager = JobManager(tmp_path, step_delay=0.1)
+    manager = make_manager(tmp_path, delay=0.1)
     client = TestClient(create_app(manager))
     created = create_job(client)
     response = client.post(f"/api/jobs/{created['job_id']}/cancel")
@@ -158,7 +169,7 @@ def test_corrupted_metadata_returns_structured_error(tmp_path: Path) -> None:
     metadata = tmp_path / job_id / "metadata"
     metadata.mkdir(parents=True)
     (metadata / "job.json").write_text("{not-json", encoding="utf-8")
-    client = TestClient(create_app(JobManager(tmp_path, step_delay=0.01)))
+    client = TestClient(create_app(make_manager(tmp_path)))
 
     response = client.get(f"/api/jobs/{job_id}")
     assert response.status_code == 500

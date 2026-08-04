@@ -8,7 +8,7 @@ describe('isValidYouTubeUrl', () => {
     'https://youtube.com/shorts/abc123',
   ])('accepts %s', (url) => expect(isValidYouTubeUrl(url)).toBe(true))
 
-  it.each(['', 'hello', 'https://example.com/watch?v=abc', 'ftp://youtu.be/abc'])('rejects %s', (url) => {
+  it.each(['', 'hello', 'https://example.com/watch?v=abc', 'ftp://youtu.be/abc', 'https://youtu.be/abc?list=PL123'])('rejects %s', (url) => {
     expect(isValidYouTubeUrl(url)).toBe(false)
   })
 })

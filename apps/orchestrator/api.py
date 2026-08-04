@@ -5,7 +5,7 @@ import os
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
 
 from .job_manager import JobManager, PipelineError
 from .models import CreateJobRequest
@@ -45,12 +45,13 @@ def create_app(manager: JobManager | None = None) -> FastAPI:
 
     @app.get("/api/health")
     def health() -> dict:
+        source_readiness = job_manager.source_readiness()
         return {
-            "status": "ok",
-            "mode": "stub",
+            "status": "ok" if source_readiness["status"] != "missing_dependency" else "degraded",
+            "mode": "real_source_stub_engines",
             "workspace": str(job_manager.workspace),
             "dependencies": {
-                "source_ingestor": "stub_ready",
+                "source_ingestor": source_readiness,
                 "hook_engine": "stub_ready",
                 "review_engine": "stub_ready",
                 "final_composer": "stub_ready",
@@ -65,6 +66,13 @@ def create_app(manager: JobManager | None = None) -> FastAPI:
     def get_job(job_id: str) -> dict:
         return job_manager.get_job(job_id).model_dump(mode="json")
 
+    @app.get("/api/jobs/{job_id}/assets/thumbnail")
+    def get_thumbnail(job_id: str) -> FileResponse:
+        return FileResponse(
+            job_manager.thumbnail_path(job_id),
+            media_type="image/jpeg",
+            filename="thumbnail.jpg",
+        )
     @app.post("/api/jobs/{job_id}/cancel")
     def cancel_job(job_id: str) -> dict:
         job = job_manager.cancel_job(job_id)

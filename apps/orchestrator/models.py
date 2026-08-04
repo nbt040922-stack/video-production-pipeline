@@ -19,9 +19,12 @@ def is_youtube_url(value: str) -> bool:
             return False
         if parsed.hostname not in {"youtube.com", "www.youtube.com", "m.youtube.com", "youtu.be"}:
             return False
+        query = parse_qs(parsed.query)
+        if query.get("list"):
+            return False
         if parsed.hostname == "youtu.be":
             return len(parsed.path) > 1
-        return bool(parse_qs(parsed.query).get("v")) or parsed.path.startswith(("/shorts/", "/live/"))
+        return bool(query.get("v")) or parsed.path.startswith(("/shorts/", "/live/"))
     except ValueError:
         return False
 
@@ -77,6 +80,13 @@ class SourceMetadata(BaseModel):
     channel: str
     duration: str
     status: str = "ready"
+    thumbnail_url: str | None = None
+    youtube_video_id: str | None = None
+    duration_seconds: float | None = None
+    width: int | None = None
+    height: int | None = None
+    fps: float | None = None
+    file_size_bytes: int | None = None
 
 
 class OutputMetadata(BaseModel):

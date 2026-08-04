@@ -6,7 +6,7 @@ Base URL: `http://127.0.0.1:8000`
 
 `GET /api/health`
 
-Returns backend mode, workspace location, and stub adapter readiness.
+Returns backend mode, workspace location, real Source Ingestor dependency readiness, and stub engine readiness.
 
 ## Create job
 
@@ -35,6 +35,11 @@ Returns current persisted job state:
 - structured error;
 - final output metadata.
 
+## Source thumbnail
+
+`GET /api/jobs/{job_id}/assets/thumbnail`
+
+Returns the validated `image/jpeg` thumbnail for one job. Missing or unknown assets return structured errors. The endpoint cannot read arbitrary paths.
 ## Cancel job
 
 `POST /api/jobs/{job_id}/cancel`
@@ -68,7 +73,7 @@ Errors never include Python tracebacks:
 }
 ```
 
-Codes include `INVALID_YOUTUBE_URL`, `JOB_NOT_FOUND`, `INVALID_JOB_STATE`, `CORRUPTED_JOB_METADATA`, `JOB_CANCELLED`, `INTERRUPTED`, and `WORKER_ERROR`. Full worker tracebacks are written only to the job's `logs/pipeline.log`.
+Codes include source errors such as `INVALID_YOUTUBE_URL`, `PLAYLIST_NOT_SUPPORTED`, `YTDLP_MISSING`, `FFMPEG_MISSING`, `FFPROBE_FAILED`, `PRIVATE_VIDEO`, `VIDEO_UNAVAILABLE`, `AUTH_REQUIRED`, and `DOWNLOAD_FAILED`, plus `JOB_NOT_FOUND`, `INVALID_JOB_STATE`, `CORRUPTED_JOB_METADATA`, `JOB_CANCELLED`, `INTERRUPTED`, and `WORKER_ERROR`. Full worker tracebacks are written only to the job's `logs/pipeline.log`.
 
 ## Controlled failure
 

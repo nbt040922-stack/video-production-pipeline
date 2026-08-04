@@ -21,13 +21,20 @@ interface BackendStage {
   message: string
 }
 
+interface BackendSource {
+  title: string
+  channel: string
+  duration: string
+  status: 'ready'
+  thumbnail_url?: string | null
+}
 interface BackendJob {
   job_id: string
   youtube_url: string
   status: string
   elapsed_seconds: number
   stages: BackendStage[]
-  source: SourceMetadata | null
+  source: BackendSource | null
   hook_engine: {
     status: EngineState | 'cancelled'
     elapsed_seconds: number
@@ -102,7 +109,7 @@ export class BackendPipelineClient implements PipelineClient {
     return {
       id: job.job_id,
       sourceUrl: job.youtube_url,
-      source: job.source ?? pendingSource,
+      source: job.source ? this.mapSource(job.source) : pendingSource,
       status: this.mapJobStatus(job.status),
       elapsedSeconds: job.elapsed_seconds,
       error: job.error?.message,
@@ -139,6 +146,15 @@ export class BackendPipelineClient implements PipelineClient {
     }
   }
 
+  private mapSource(source: BackendSource): SourceMetadata {
+    return {
+      title: source.title,
+      channel: source.channel,
+      duration: source.duration,
+      status: source.status,
+      thumbnailUrl: source.thumbnail_url ? `${this.baseUrl}${source.thumbnail_url}` : undefined,
+    }
+  }
   private mapJobStatus(status: string): JobStatus {
     if (status === 'completed' || status === 'failed' || status === 'cancelled') return status
     if (status === 'queued' || status === 'validating') return 'validating'

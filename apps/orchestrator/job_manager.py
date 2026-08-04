@@ -20,7 +20,6 @@ from .adapters import (
     StubFinalComposer,
     StubHookEngineAdapter,
     StubReviewEngineAdapter,
-    StubSourceIngestor,
 )
 from .models import (
     EngineStatus,
@@ -33,7 +32,7 @@ from .models import (
     VideoJob,
     utc_now,
 )
-
+from .source_ingestor import RealSourceIngestor, SourceIngestorError, SourceResult
 SAFE_JOB_ID = re.compile(r"^[a-f0-9]{32}$")
 TERMINAL_STATUSES = {JobStatus.COMPLETED, JobStatus.FAILED, JobStatus.CANCELLED}
 
@@ -77,7 +76,7 @@ class JobManager:
         self._cancel_events: dict[str, Event] = {}
         self._workers: dict[str, Thread] = {}
         self.step_delay = step_delay
-        self.source_ingestor = source_ingestor or StubSourceIngestor(step_delay)
+        self.source_ingestor = source_ingestor or RealSourceIngestor()
         self.hook_engine = hook_engine or StubHookEngineAdapter(step_delay)
         self.review_engine = review_engine or StubReviewEngineAdapter(step_delay)
         self.composer = composer or StubFinalComposer(step_delay)
@@ -160,21 +159,30 @@ class JobManager:
                 self._log(job_id, "Validating input")
 
             cancel = self._cancel_events[job_id]
-            if cancel.wait(self.step_delay):
+            if cancel.is_set():
                 raise JobCancelled
+            source_result: SourceResult | None = None
 
-            with self._lock:
-                job = self._jobs[job_id]
-                job.source = SourceMetadata(
-                    title="Bodycam Footage Review — Local Backend",
-                    channel="Local pipeline fixture",
-                    duration="12:48",
-                )
-                self._persist(job)
-
-            for index, stage in enumerate(STAGES):
+            for index, (stage_id, _name) in enumerate(STAGES):
                 self._start_stage(job_id, index)
-                self._run_stage(job_id, stage[0], cancel)
+                workspace = self._job_dir(job_id)
+                progress = lambda value, message, active_stage=stage_id: self._report_progress(
+                    job_id, active_stage, value, message
+                )
+                if stage_id == "download":
+                    job = self.get_job(job_id)
+                    source_result = self.source_ingestor.download(
+                        job.youtube_url, job_id, workspace, cancel, progress
+                    )
+                elif stage_id == "thumbnail":
+                    if source_result is None:
+                        raise SourceIngestorError("SOURCE_RESULT_MISSING", "Thiếu dữ liệu video nguồn.")
+                    source_result = self.source_ingestor.prepare_thumbnail(
+                        source_result, job_id, workspace, cancel, progress
+                    )
+                    self._apply_source_result(job_id, source_result)
+                else:
+                    self._run_non_source_stage(job_id, stage_id, cancel, progress)
                 self._finish_stage(job_id, index)
 
             with self._lock:
@@ -201,7 +209,11 @@ class JobManager:
             with self._lock:
                 job = self._jobs[job_id]
                 current = next((stage for stage in job.stages if stage.status == StageStatus.RUNNING), None)
-                error = ErrorData(code="WORKER_ERROR", message="Xử lý công việc thất bại.")
+                error = (
+                    ErrorData(code=exc.code, message=exc.message)
+                    if isinstance(exc, SourceIngestorError)
+                    else ErrorData(code="WORKER_ERROR", message="Xử lý công việc thất bại.")
+                )
                 if current:
                     current.status = StageStatus.FAILED
                     current.error = error
@@ -218,14 +230,13 @@ class JobManager:
                 self._persist(job)
                 self._log(job_id, f"Worker failed: {exc}\n{traceback.format_exc()}")
 
-    def _run_stage(self, job_id: str, stage_id: str, cancel: Event) -> None:
+    def _run_non_source_stage(
+        self, job_id: str, stage_id: str, cancel: Event, progress: Any
+    ) -> None:
         workspace = self._job_dir(job_id)
-        progress = lambda value, message: self._report_progress(job_id, stage_id, value, message)
         job = self.get_job(job_id)
         fail = "fixture=fail" in job.youtube_url and job.attempt == 1
         actions = {
-            "download": lambda: self.source_ingestor.download(workspace, cancel, progress),
-            "thumbnail": lambda: self.source_ingestor.prepare_thumbnail(workspace, cancel, progress),
             "hook": lambda: self.hook_engine.generate(workspace, cancel, progress),
             "script": lambda: self.review_engine.write_review(workspace, cancel, progress, fail),
             "voice": lambda: self.review_engine.generate_voice(workspace, cancel, progress),
@@ -236,6 +247,41 @@ class JobManager:
         }
         actions[stage_id]()
 
+    def _apply_source_result(self, job_id: str, result: SourceResult) -> None:
+        with self._lock:
+            job = self._jobs[job_id]
+            job.source = SourceMetadata(
+                title=result.title,
+                channel=result.channel,
+                duration=self._format_duration(result.duration_seconds),
+                thumbnail_url=f"/api/jobs/{job_id}/assets/thumbnail",
+                youtube_video_id=result.youtube_video_id,
+                duration_seconds=result.duration_seconds,
+                width=result.width,
+                height=result.height,
+                fps=result.fps,
+                file_size_bytes=result.file_size_bytes,
+            )
+            self._persist(job)
+            self._log(job_id, "Source metadata attached")
+
+    def source_readiness(self) -> dict[str, str]:
+        readiness = getattr(self.source_ingestor, "readiness", None)
+        return readiness() if readiness else {"status": "stub_ready"}
+
+    def thumbnail_path(self, job_id: str) -> Path:
+        job = self.get_job(job_id)
+        path = self._job_dir(job.job_id) / "source" / "thumbnail.jpg"
+        if not path.is_file():
+            raise PipelineError("THUMBNAIL_NOT_FOUND", "Không tìm thấy thumbnail của công việc.", 404)
+        return path
+
+    @staticmethod
+    def _format_duration(seconds: float) -> str:
+        total = max(0, round(seconds))
+        hours, remainder = divmod(total, 3600)
+        minutes, secs = divmod(remainder, 60)
+        return f"{hours}:{minutes:02d}:{secs:02d}" if hours else f"{minutes}:{secs:02d}"
     def _start_stage(self, job_id: str, index: int) -> None:
         with self._lock:
             job = self._jobs[job_id]

@@ -11,7 +11,7 @@ React UI
   -> BackendPipelineClient
   -> FastAPI job API
   -> JobManager
-  -> deterministic stub adapters
+  -> real source ingestor + deterministic engine stubs
   -> isolated workspace + atomic job.json + pipeline.log
 ```
 
@@ -48,17 +48,17 @@ Job IDs are 32 lowercase hexadecimal UUID values. Directory creation rejects col
 
 ## Cancellation
 
-Each active job owns a `threading.Event`. Cancellation sets the event, marks unfinished stages cancelled, persists metadata, and returns immediately. Stub adapters check the event during work.
+Each active job owns a `threading.Event`. Cancellation sets the event, marks unfinished stages cancelled, persists metadata, and returns immediately. Source and stub adapters check the event during work.
 
 ## Startup recovery
 
 `JobManager` loads persisted jobs at startup. Jobs found in non-terminal states become `failed` with error code `INTERRUPTED`. Corrupted metadata remains untouched and returns a structured `CORRUPTED_JOB_METADATA` error.
 
-## Stub adapters
+## Pipeline adapters
 
-The backend defines `SourceIngestor`, `HookEngineAdapter`, `ReviewEngineAdapter`, and `FinalComposer` protocols. Current stub implementations report backend-owned progress and write small harmless placeholder artifacts.
+The backend defines `SourceIngestor`, `HookEngineAdapter`, `ReviewEngineAdapter`, and `FinalComposer` protocols. Source ingestion uses yt-dlp, Pillow, FFmpeg, and ffprobe. Remaining adapters report backend-owned progress and write small harmless placeholder artifacts.
 
-Future real adapters replace these four constructor dependencies. Engine submodules remain untouched and hidden behind adapter boundaries.
+Future real Hook, Review, and Composer adapters replace those three constructor dependencies. Engine submodules remain untouched and hidden behind adapter boundaries.
 
 ## Frontend mode
 

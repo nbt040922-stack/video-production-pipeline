@@ -62,4 +62,24 @@ describe('BackendPipelineClient', () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(response({ error: { message: 'Xử lý thất bại' } }, false)))
     await expect(new BackendPipelineClient('http://api').getJob('job-1')).rejects.toThrow('Xử lý thất bại')
   })
-})
+
+  it('maps real source metadata and thumbnail URL', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(response({
+      ...backendJob,
+      source: {
+        title: 'Real title',
+        channel: 'Real channel',
+        duration: '1:02',
+        status: 'ready',
+        thumbnail_url: '/api/jobs/job-1/assets/thumbnail',
+      },
+    })))
+    const job = await new BackendPipelineClient('http://api').getJob('job-1')
+
+    expect(job.source).toMatchObject({
+      title: 'Real title',
+      channel: 'Real channel',
+      duration: '1:02',
+      thumbnailUrl: 'http://api/api/jobs/job-1/assets/thumbnail',
+    })
+  })})

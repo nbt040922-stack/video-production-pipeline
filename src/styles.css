@@ -100,7 +100,8 @@ label { display: block; margin-bottom: 7px; color: #c8c9d0; font-size: 12px; fon
 .source-card { display: grid; grid-template-columns: 260px 1fr; padding: 14px; gap: 18px; align-items: center; }
 .video-preview { position: relative; min-height: 140px; overflow: hidden; border-radius: 9px; background: #252832; border: 1px solid #343743; isolation: isolate; }
 .video-preview::before { content: ''; position: absolute; inset: 0; background: linear-gradient(135deg, #333743 0%, #1c2028 48%, #2a2428 100%); z-index: -2; }
-.video-preview::after { content: ''; position: absolute; inset: 45% 0 0; background: #14171c; transform: skewY(-6deg); transform-origin: left; z-index: -1; }
+.video-preview.has-image::before, .video-preview.has-image::after { display: none; }
+.preview-image { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; background: #0d0e12; }.video-preview::after { content: ''; position: absolute; inset: 45% 0 0; background: #14171c; transform: skewY(-6deg); transform-origin: left; z-index: -1; }
 .camera-tag { position: absolute; top: 9px; left: 9px; padding: 3px 5px; border-radius: 3px; background: rgb(10 11 15 / .78); color: #e8e9ed; font-size: 7px; font-weight: 850; letter-spacing: .08em; }
 .preview-timecode { position: absolute; right: 8px; bottom: 7px; padding: 2px 4px; background: rgb(0 0 0 / .62); border-radius: 3px; font: 8px ui-monospace, monospace; }
 .preview-play { position: absolute; left: 50%; top: 50%; width: 36px; height: 36px; border-radius: 50%; background: rgb(9 10 14 / .7); border: 1px solid rgb(255 255 255 / .18); transform: translate(-50%, -50%); }

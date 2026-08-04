@@ -170,4 +170,17 @@ npm test
 npm run build
 ```
 
-The backend currently uses deterministic local adapters. It does not download media, call AI services, run FFmpeg, or execute either engine. See [docs/BACKEND_ARCHITECTURE.md](docs/BACKEND_ARCHITECTURE.md) and [docs/API_CONTRACT.md](docs/API_CONTRACT.md).
+The source stage uses yt-dlp, Pillow, FFmpeg, and ffprobe. Hook, Review, and Composer stages still use deterministic local adapters; neither engine submodule is executed. See [docs/BACKEND_ARCHITECTURE.md](docs/BACKEND_ARCHITECTURE.md) and [docs/API_CONTRACT.md](docs/API_CONTRACT.md).
+## Real source ingestion
+
+Install dependencies through `setup.ps1` or `setup.sh`. FFmpeg and ffprobe must be available on `PATH`, or configured through `FFMPEG_PATH` and `FFPROBE_PATH`.
+
+The backend accepts one standard YouTube or `youtu.be` URL, downloads at most 1080p without upscaling, and writes `source.mp4`, `thumbnail.jpg`, and `metadata.json` into the isolated job workspace.
+
+Manual real-download smoke test:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\smoke_source.py "https://www.youtube.com/watch?v=VIDEO_ID"
+```
+
+See [docs/SOURCE_INGESTOR.md](docs/SOURCE_INGESTOR.md). Default tests mock yt-dlp and never download real media.

@@ -12,7 +12,7 @@ const statusLabels = {
 export function SourcePreview({ source }: { source: SourceMetadata }) {
   return (
     <section className="panel source-card" aria-labelledby="source-title">
-      <VideoPreview label="Xem trước video YouTube nguồn" />
+      <VideoPreview label="Xem trước video YouTube nguồn" src={source.thumbnailUrl} />
       <div className="source-details">
         <div className="source-ready"><span /> Nguồn hợp lệ</div>
         <h2 id="source-title">{source.title}</h2>
