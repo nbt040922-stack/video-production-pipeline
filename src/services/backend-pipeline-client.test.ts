@@ -14,8 +14,8 @@ const backendJob = {
     message: 'Đang tải nguồn: 65%',
   }],
   source: null,
-  hook_engine: { status: 'pending', elapsed_seconds: 0, output_filename: 'final_hook.mp4' },
-  review_engine: { status: 'pending', elapsed_seconds: 0, output_filename: 'review.mp4' },
+  hook_engine: { status: 'completed', progress: 100, message: 'Hook hoàn tất', elapsed_seconds: 8, output_filename: 'final_hook.mp4', preview_url: '/api/jobs/job-1/assets/hook' },
+  review_engine: { status: 'pending', progress: 0, message: 'Đang chờ', elapsed_seconds: 0, output_filename: 'review.mp4' },
   output: null,
   error: null,
 }
@@ -44,6 +44,7 @@ describe('BackendPipelineClient', () => {
     expect(job.status).toBe('processing')
     expect(job.stages[0]).toMatchObject({ status: 'running', elapsedSeconds: 2 })
     expect(job.engines.map((engine) => engine.name)).toEqual(['Hook Engine', 'Review Engine'])
+    expect(job.engines[0]).toMatchObject({ progress: 100, message: 'Hook hoàn tất', previewUrl: 'http://api/api/jobs/job-1/assets/hook' })
   })
 
   it('sends cancellation and retry to backend', async () => {

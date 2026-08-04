@@ -1,11 +1,18 @@
-export function VideoPreview({ variant = 'source', label, src }: {
+export function VideoPreview({ variant = 'source', label, src, videoSrc }: {
   variant?: 'source' | 'hook' | 'review' | 'final'
   label: string
   src?: string
+  videoSrc?: string
 }) {
   return (
-    <div className={`video-preview ${variant} ${src ? 'has-image' : ''}`} role="img" aria-label={label}>
-      {src ? (
+    <div
+      className={`video-preview ${variant} ${src ? 'has-image' : ''} ${videoSrc ? 'has-video' : ''}`}
+      role={videoSrc ? undefined : 'img'}
+      aria-label={videoSrc ? undefined : label}
+    >
+      {videoSrc ? (
+        <video className="preview-video" src={videoSrc} aria-label={label} controls preload="metadata" />
+      ) : src ? (
         <img className="preview-image" src={src} alt="" />
       ) : (
         <div className="preview-scene">
@@ -15,8 +22,8 @@ export function VideoPreview({ variant = 'source', label, src }: {
         </div>
       )}
       <div className="camera-tag">BODYCAM</div>
-      <div className="preview-play" aria-hidden="true" />
-      <div className="preview-timecode">00:04:18</div>
+      {!videoSrc && <div className="preview-play" aria-hidden="true" />}
+      {!videoSrc && <div className="preview-timecode">00:04:18</div>}
     </div>
   )
 }

@@ -29,8 +29,14 @@ class SourceIngestor(Protocol):
     ) -> "SourceResult": ...
 
 
-class HookEngineAdapter(Protocol):
-    def generate(self, workspace: Path, cancel: Event, progress: ProgressCallback) -> None: ...
+class HookEngine(Protocol):
+    def prepare(self, thumbnail: Path, job_id: str, workspace: Path) -> None: ...
+    def run(
+        self, thumbnail: Path, job_id: str, workspace: Path, cancel: Event, progress: ProgressCallback
+    ) -> Path: ...
+    def status(self, job_id: str) -> dict[str, int | str]: ...
+    def cancel(self, job_id: str) -> None: ...
+    def cleanup(self, job_id: str, workspace: Path) -> None: ...
 
 
 class ReviewEngineAdapter(Protocol):
@@ -125,10 +131,38 @@ class StubSourceIngestor:
 class StubHookEngineAdapter:
     def __init__(self, delay: float) -> None:
         self.delay = delay
+        self._status: dict[str, int | str] = {"status": "pending", "progress": 0, "message": "Đang chờ"}
 
-    def generate(self, workspace: Path, cancel: Event, progress: ProgressCallback) -> None:
+    def prepare(self, thumbnail: Path, job_id: str, workspace: Path) -> None:
+        if not thumbnail.is_file():
+            raise FileNotFoundError(thumbnail)
+        self._status = {"status": "prepared", "progress": 5, "message": "Đã chuẩn bị Hook Engine"}
+
+    def run(
+        self, thumbnail: Path, job_id: str, workspace: Path, cancel: Event, progress: ProgressCallback
+    ) -> Path:
+        self._status = {"status": "running", "progress": 25, "message": "Đang tạo Hook"}
         _work("Đang tạo đoạn mở đầu", self.delay, cancel, progress)
-        (workspace / "hook" / "final_hook.mp4").write_bytes(b"placeholder hook\n")
+        output = workspace / "hook" / "final_hook.mp4"
+        output.write_bytes(b"placeholder hook\n")
+        (workspace / "hook" / "metadata.json").write_text(
+            json.dumps({"schema_version": 1, "job_id": job_id, "final_video_path": "hook/final_hook.mp4"}),
+            encoding="utf-8",
+        )
+        self._status = {"status": "completed", "progress": 100, "message": "Hook hoàn tất"}
+        return output
+
+    def status(self, job_id: str) -> dict[str, int | str]:
+        return self._status.copy()
+
+    def cancel(self, job_id: str) -> None:
+        self._status = {"status": "cancelled", "progress": int(self._status["progress"]), "message": "Đã hủy"}
+
+    def cleanup(self, job_id: str, workspace: Path) -> None:
+        return None
+
+    def readiness(self) -> dict[str, str]:
+        return {"status": "stub_ready"}
 
 
 class StubReviewEngineAdapter:

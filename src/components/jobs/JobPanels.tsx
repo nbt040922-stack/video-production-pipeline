@@ -38,12 +38,15 @@ export function EngineCards({ engines }: { engines: EngineStatus[] }) {
       <div className="engine-grid">
         {engines.map((engine) => (
           <article className={`panel engine-card ${engine.status}`} key={engine.id}>
-            <VideoPreview variant={engine.id} label={`Xem trước ${engine.name}`} />
+            <VideoPreview variant={engine.id} label={`Xem trước ${engine.name}`} videoSrc={engine.previewUrl} />
             <div className="engine-card-body">
               <div className="engine-title-row">
                 <h3>{engine.name}</h3>
                 <span className={`status-pill ${engine.status}`}>{statusLabels[engine.status]}</span>
               </div>
+              {engine.id === 'hook' && engine.status === 'running' && (
+                <p className="engine-progress" aria-live="polite">{engine.message} · {engine.progress}%</p>
+              )}
               <dl className="engine-stats">
                 <div><dt>Thời gian</dt><dd>{engine.elapsedSeconds ? `${engine.elapsedSeconds} giây` : '—'}</dd></div>
                 {engine.proxySavings && <div><dt>Tiết kiệm proxy</dt><dd>{engine.proxySavings}</dd></div>}

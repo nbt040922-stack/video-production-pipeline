@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from apps.orchestrator.adapters import StubSourceIngestor
+from apps.orchestrator.adapters import StubHookEngineAdapter, StubSourceIngestor
 from apps.orchestrator.api import create_app
 from apps.orchestrator.job_manager import JobManager
 
@@ -15,7 +15,12 @@ FAIL_URL = "https://youtu.be/demo123?fixture=fail"
 
 
 def make_manager(path: Path, delay: float = 0.01) -> JobManager:
-    return JobManager(path, step_delay=delay, source_ingestor=StubSourceIngestor(delay))
+    return JobManager(
+        path,
+        step_delay=delay,
+        source_ingestor=StubSourceIngestor(delay),
+        hook_engine=StubHookEngineAdapter(delay),
+    )
 
 
 @pytest.fixture
@@ -49,7 +54,7 @@ def test_health(client: TestClient) -> None:
     assert response.status_code == 200
     assert response.json()["status"] == "ok"
     assert response.json()["dependencies"]["source_ingestor"]["status"] == "stub_ready"
-    assert response.json()["dependencies"]["hook_engine"] == "stub_ready"
+    assert response.json()["dependencies"]["hook_engine"]["status"] == "stub_ready"
 
 
 def test_valid_job_creates_isolated_workspace_and_metadata(client: TestClient, manager: JobManager) -> None:
@@ -84,6 +89,10 @@ def test_job_progresses_and_completes_with_output(client: TestClient, manager: J
     thumbnail = client.get(f"/api/jobs/{job['job_id']}/assets/thumbnail")
     assert thumbnail.status_code == 200
     assert thumbnail.headers["content-type"] == "image/jpeg"
+    hook = client.get(f"/api/jobs/{job['job_id']}/assets/hook")
+    assert hook.status_code == 200
+    assert hook.headers["content-type"] == "video/mp4"
+    assert (manager.workspace / job["job_id"] / "hook" / "metadata.json").is_file()
     assert (manager.workspace / job["job_id"] / "logs" / "pipeline.log").is_file()
 
 

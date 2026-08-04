@@ -6,47 +6,65 @@
 YouTube URL
     |
     v
-Downloader
+Source Ingestor
     |
     v
-Hook Engine
+thumbnail.jpg
     |
     v
-Review Engine
+HookEngineAdapter
     |
     v
-Composer
+Hook Engine CLI (generate + phase4)
     |
     v
-Final Video
+hook/final_hook.mp4
+    |
+    v
+Review Engine stub -> Composer stub -> Final Video
 ```
 
 ## Component boundaries
 
-### Downloader
+### Source Ingestor
 
-Accepts a YouTube URL and places downloaded source media in `workspace/`. It is a future parent-project component; no downloader is implemented here yet.
+The parent orchestrator validates one YouTube URL and writes `source/source.mp4`, `source/thumbnail.jpg`, and `source/metadata.json` inside an isolated job workspace.
+
+### HookEngineAdapter
+
+The parent owns workspace preparation, CLI process control, progress, cancellation, cleanup, output collection, and ffprobe validation. It calls the Hook Engine's public CLI and never imports or duplicates engine logic.
 
 ### Hook Engine
 
-The `engines/hook-engine` submodule is independently versioned and produces `final_hook.mp4`. The parent treats it as a production-ready module and does not own its internals.
+The independently versioned `engines/hook-engine` submodule remains a black box. Its `generate` command creates a raw candidate; `phase4` produces the five-second `final_hook.mp4`.
 
 ### Review Engine
 
-The `engines/review-engine` submodule is independently versioned and produces `review.mp4`. The parent treats it as a production-ready module and does not own its internals.
+The `engines/review-engine` submodule remains untouched. M04 still uses the parent Review stub.
 
 ### Composer
 
-The `composer` package will consume `final_hook.mp4` and `review.mp4` and produce the final video. This repository currently provides only the package boundary.
+Composer remains a stub that preserves the existing end-to-end job flow. Real composition is outside M04.
 
 ### Orchestrator
 
-The future `apps.orchestrator` package will coordinate stage execution, workspace paths, failure handling, and configuration. It will call the engines through their supported command-line or file interfaces rather than importing their internal implementation.
+`apps.orchestrator` coordinates stages, job state, isolated paths, persistence, structured failures, cancellation, and asset endpoints.
 
 ## Workspace contract
 
-All runtime inputs, intermediate artifacts, logs, and outputs belong under `workspace/` and are excluded from version control. Source repositories remain immutable from the parent pipeline's perspective.
+```text
+workspace/<job_id>/
+├── source/thumbnail.jpg
+├── hook/final_hook.mp4
+├── hook/metadata.json
+├── review/
+├── final/
+├── metadata/job.json
+└── logs/pipeline.log
+```
+
+Runtime artifacts stay outside version control. The parent never writes into either engine repository.
 
 ## Versioning
 
-Each submodule entry pins an exact engine commit. Updating an engine is an explicit parent-repository change, providing reproducible builds while preserving the complete history and release process of each engine.
+Each submodule entry pins an exact engine commit. Updating an engine remains an explicit parent-repository change, preserving independent history and releases.

@@ -37,13 +37,19 @@ interface BackendJob {
   source: BackendSource | null
   hook_engine: {
     status: EngineState | 'cancelled'
+    progress: number
+    message: string
     elapsed_seconds: number
     output_filename: string
+    preview_url?: string | null
   }
   review_engine: {
     status: EngineState | 'cancelled'
+    progress: number
+    message: string
     elapsed_seconds: number
     output_filename: string
+    preview_url?: string | null
     proxy_savings?: string
   }
   output: null | {
@@ -125,15 +131,21 @@ export class BackendPipelineClient implements PipelineClient {
           id: 'hook',
           name: 'Hook Engine',
           status: job.hook_engine.status === 'cancelled' ? 'skipped' : job.hook_engine.status,
+          progress: job.hook_engine.progress,
+          message: job.hook_engine.message,
           elapsedSeconds: job.hook_engine.elapsed_seconds,
           outputFilename: job.hook_engine.output_filename,
+          previewUrl: job.hook_engine.preview_url ? `${this.baseUrl}${job.hook_engine.preview_url}` : undefined,
         },
         {
           id: 'review',
           name: 'Review Engine',
           status: job.review_engine.status === 'cancelled' ? 'skipped' : job.review_engine.status,
+          progress: job.review_engine.progress,
+          message: job.review_engine.message,
           elapsedSeconds: job.review_engine.elapsed_seconds,
           outputFilename: job.review_engine.output_filename,
+          previewUrl: job.review_engine.preview_url ? `${this.baseUrl}${job.review_engine.preview_url}` : undefined,
           proxySavings: job.review_engine.proxy_savings,
         },
       ],

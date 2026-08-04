@@ -37,8 +37,11 @@ export interface EngineStatus {
   id: 'hook' | 'review'
   name: string
   status: EngineState
+  progress: number
+  message: string
   elapsedSeconds: number
   outputFilename: string
+  previewUrl?: string
   proxySavings?: string
 }
 

@@ -46,13 +46,14 @@ def create_app(manager: JobManager | None = None) -> FastAPI:
     @app.get("/api/health")
     def health() -> dict:
         source_readiness = job_manager.source_readiness()
+        hook_readiness = job_manager.hook_readiness()
         return {
-            "status": "ok" if source_readiness["status"] != "missing_dependency" else "degraded",
-            "mode": "real_source_stub_engines",
+            "status": "ok" if all(item["status"] != "missing_dependency" for item in (source_readiness, hook_readiness)) else "degraded",
+            "mode": "real_source_real_hook_stub_review_composer",
             "workspace": str(job_manager.workspace),
             "dependencies": {
                 "source_ingestor": source_readiness,
-                "hook_engine": "stub_ready",
+                "hook_engine": hook_readiness,
                 "review_engine": "stub_ready",
                 "final_composer": "stub_ready",
             },
@@ -73,6 +74,11 @@ def create_app(manager: JobManager | None = None) -> FastAPI:
             media_type="image/jpeg",
             filename="thumbnail.jpg",
         )
+
+    @app.get("/api/jobs/{job_id}/assets/hook")
+    def get_hook(job_id: str) -> FileResponse:
+        return FileResponse(job_manager.hook_path(job_id), media_type="video/mp4")
+
     @app.post("/api/jobs/{job_id}/cancel")
     def cancel_job(job_id: str) -> dict:
         job = job_manager.cancel_job(job_id)

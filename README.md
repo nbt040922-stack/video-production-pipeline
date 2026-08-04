@@ -4,7 +4,7 @@ Parent repository for a modular video-production workflow. It coordinates two pr
 
 ## Purpose
 
-The planned pipeline turns a YouTube URL into a composed final video:
+The pipeline turns a YouTube URL into a composed final video:
 
 ```text
 YouTube URL -> Downloader -> Hook Engine -> Review Engine -> Composer -> Final Video
@@ -13,7 +13,7 @@ YouTube URL -> Downloader -> Hook Engine -> Review Engine -> Composer -> Final V
 - **Hook Engine** produces `final_hook.mp4`.
 - **Review Engine** produces `review.mp4`.
 - **Composer** will combine those outputs into the final video.
-- **Orchestrator** will coordinate the stages in a future implementation.
+- **Orchestrator** coordinates the real Source and Hook stages while Review and Composer remain stubs.
 
 See [docs/Architecture.md](docs/Architecture.md) for component boundaries and data flow.
 
@@ -96,16 +96,16 @@ git commit -m "chore: update review engine"
 
 Updating a submodule changes only the commit pointer stored by this parent repository. Engine code changes must be committed and pushed in the engine's own repository first.
 
-## Future orchestrator
+## Orchestrator
 
-No orchestrator is implemented yet. Its future entry point will be run as:
+Run the local orchestrator API with:
 
 ```bash
 python -m apps.orchestrator
 ```
 ## Frontend prototype
 
-The desktop-first React prototype runs entirely in mock mode. It does not call either engine or any external media service.
+The desktop-first React frontend defaults to mock mode. Backend mode polls the local orchestrator and previews real Source and Hook assets.
 
 ```bash
 npm install
@@ -170,7 +170,7 @@ npm test
 npm run build
 ```
 
-The source stage uses yt-dlp, Pillow, FFmpeg, and ffprobe. Hook, Review, and Composer stages still use deterministic local adapters; neither engine submodule is executed. See [docs/BACKEND_ARCHITECTURE.md](docs/BACKEND_ARCHITECTURE.md) and [docs/API_CONTRACT.md](docs/API_CONTRACT.md).
+The source stage uses yt-dlp, Pillow, FFmpeg, and ffprobe. The Hook stage wraps the real Hook Engine CLI. Review and Composer remain deterministic local adapters. See [docs/BACKEND_ARCHITECTURE.md](docs/BACKEND_ARCHITECTURE.md) and [docs/API_CONTRACT.md](docs/API_CONTRACT.md).
 ## Real source ingestion
 
 Install dependencies through `setup.ps1` or `setup.sh`. FFmpeg and ffprobe must be available on `PATH`, or configured through `FFMPEG_PATH` and `FFPROBE_PATH`.
@@ -184,3 +184,19 @@ Manual real-download smoke test:
 ```
 
 See [docs/SOURCE_INGESTOR.md](docs/SOURCE_INGESTOR.md). Default tests mock yt-dlp and never download real media.
+## Real Hook Engine integration
+
+The Hook adapter passes `workspace/<job_id>/source/thumbnail.jpg` to the existing Hook Engine CLI, runs `generate` and `phase4`, validates the five-second video with ffprobe, and exposes `hook/final_hook.mp4` for preview. Hook Engine internals and submodule history remain untouched.
+
+A complete local engine runtime needs ComfyUI, Wan resources, an approved motion, FFmpeg, ffprobe, and the engine Python environment. Configure `HOOK_ENGINE_PATH`, `HOOK_ENGINE_PYTHON`, and `HOOK_MOTION_ID`; start ComfyUI before creating a real job.
+
+Manual adapter smoke test:
+
+```powershell
+$env:HOOK_ENGINE_PATH='D:\AI_hook_engine'
+$env:HOOK_ENGINE_PYTHON='D:\AI_hook_engine\ComfyUI\.venv\Scripts\python.exe'
+$env:HOOK_MOTION_ID='motion1'
+.\.venv\Scripts\python.exe scripts\smoke_hook.py "C:\path\to\thumbnail.jpg"
+```
+
+See [docs/HOOK_ENGINE_ADAPTER.md](docs/HOOK_ENGINE_ADAPTER.md). Automated tests do not run ComfyUI or GPU generation.

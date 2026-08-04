@@ -13,14 +13,14 @@ from uuid import uuid4
 
 from .adapters import (
     FinalComposer,
-    HookEngineAdapter,
+    HookEngine,
     JobCancelled,
     ReviewEngineAdapter,
     SourceIngestor,
     StubFinalComposer,
-    StubHookEngineAdapter,
     StubReviewEngineAdapter,
 )
+from .hook_engine_adapter import HookEngineAdapter, HookEngineError
 from .models import (
     EngineStatus,
     ErrorData,
@@ -64,7 +64,7 @@ class JobManager:
         workspace: Path | str = "workspace",
         step_delay: float = 0.3,
         source_ingestor: SourceIngestor | None = None,
-        hook_engine: HookEngineAdapter | None = None,
+        hook_engine: HookEngine | None = None,
         review_engine: ReviewEngineAdapter | None = None,
         composer: FinalComposer | None = None,
     ) -> None:
@@ -77,7 +77,7 @@ class JobManager:
         self._workers: dict[str, Thread] = {}
         self.step_delay = step_delay
         self.source_ingestor = source_ingestor or RealSourceIngestor()
-        self.hook_engine = hook_engine or StubHookEngineAdapter(step_delay)
+        self.hook_engine = hook_engine or HookEngineAdapter()
         self.review_engine = review_engine or StubReviewEngineAdapter(step_delay)
         self.composer = composer or StubFinalComposer(step_delay)
         self._recover_jobs()
@@ -133,9 +133,13 @@ class JobManager:
                 return job
             if job.status in {JobStatus.COMPLETED, JobStatus.FAILED}:
                 raise PipelineError("INVALID_JOB_STATE", "Không thể hủy công việc đã kết thúc.", 409)
+            cancel_hook = job.current_stage == "hook"
             self._cancel_events[job_id].set()
             self._mark_cancelled(self._jobs[job_id])
-            return self._jobs[job_id].model_copy(deep=True)
+            result = self._jobs[job_id].model_copy(deep=True)
+        if cancel_hook:
+            self.hook_engine.cancel(job_id)
+        return result
 
     def retry_job(self, job_id: str) -> VideoJob:
         original = self.get_job(job_id)
@@ -211,7 +215,7 @@ class JobManager:
                 current = next((stage for stage in job.stages if stage.status == StageStatus.RUNNING), None)
                 error = (
                     ErrorData(code=exc.code, message=exc.message)
-                    if isinstance(exc, SourceIngestorError)
+                    if isinstance(exc, (SourceIngestorError, HookEngineError))
                     else ErrorData(code="WORKER_ERROR", message="Xử lý công việc thất bại.")
                 )
                 if current:
@@ -227,6 +231,7 @@ class JobManager:
                     job.review_engine.status = StageStatus.FAILED
                 if job.hook_engine.status == StageStatus.RUNNING:
                     job.hook_engine.status = StageStatus.FAILED
+                    job.hook_engine.message = error.message
                 self._persist(job)
                 self._log(job_id, f"Worker failed: {exc}\n{traceback.format_exc()}")
 
@@ -237,7 +242,7 @@ class JobManager:
         job = self.get_job(job_id)
         fail = "fixture=fail" in job.youtube_url and job.attempt == 1
         actions = {
-            "hook": lambda: self.hook_engine.generate(workspace, cancel, progress),
+            "hook": lambda: self._run_hook(job_id, workspace, cancel, progress),
             "script": lambda: self.review_engine.write_review(workspace, cancel, progress, fail),
             "voice": lambda: self.review_engine.generate_voice(workspace, cancel, progress),
             "footage": lambda: self.review_engine.select_footage(workspace, cancel, progress),
@@ -246,6 +251,14 @@ class JobManager:
             "validate": lambda: self.composer.validate(workspace, cancel, progress),
         }
         actions[stage_id]()
+
+    def _run_hook(self, job_id: str, workspace: Path, cancel: Event, progress: Any) -> None:
+        thumbnail = workspace / "source" / "thumbnail.jpg"
+        self.hook_engine.prepare(thumbnail, job_id, workspace)
+        try:
+            self.hook_engine.run(thumbnail, job_id, workspace, cancel, progress)
+        finally:
+            self.hook_engine.cleanup(job_id, workspace)
 
     def _apply_source_result(self, job_id: str, result: SourceResult) -> None:
         with self._lock:
@@ -269,11 +282,22 @@ class JobManager:
         readiness = getattr(self.source_ingestor, "readiness", None)
         return readiness() if readiness else {"status": "stub_ready"}
 
+    def hook_readiness(self) -> dict[str, str]:
+        readiness = getattr(self.hook_engine, "readiness", None)
+        return readiness() if readiness else {"status": "ready"}
+
     def thumbnail_path(self, job_id: str) -> Path:
         job = self.get_job(job_id)
         path = self._job_dir(job.job_id) / "source" / "thumbnail.jpg"
         if not path.is_file():
             raise PipelineError("THUMBNAIL_NOT_FOUND", "Không tìm thấy thumbnail của công việc.", 404)
+        return path
+
+    def hook_path(self, job_id: str) -> Path:
+        job = self.get_job(job_id)
+        path = self._job_dir(job.job_id) / "hook" / "final_hook.mp4"
+        if job.hook_engine.status != StageStatus.COMPLETED or not path.is_file():
+            raise PipelineError("HOOK_NOT_FOUND", "Không tìm thấy video Hook của công việc.", 404)
         return path
 
     @staticmethod
@@ -295,6 +319,8 @@ class JobManager:
             job.status = self._job_status_for(stage.id)
             if stage.id == "hook":
                 job.hook_engine.status = StageStatus.RUNNING
+                job.hook_engine.progress = 0
+                job.hook_engine.message = "Đang khởi chạy Hook Engine"
             if stage.id == "script":
                 job.review_engine.status = StageStatus.RUNNING
             self._persist(job)
@@ -309,6 +335,9 @@ class JobManager:
             stage.progress = progress
             stage.message = message
             stage.elapsed_seconds = self._elapsed(stage.started_at)
+            if stage_id == "hook":
+                job.hook_engine.progress = progress
+                job.hook_engine.message = message
             job.elapsed_seconds = self._elapsed(job.started_at)
             job.progress_percentage = round(sum(item.progress for item in job.stages) / len(job.stages))
             self._update_engine_elapsed(job)
@@ -326,6 +355,9 @@ class JobManager:
             job.progress_percentage = round(sum(item.progress for item in job.stages) / len(job.stages))
             if stage.id == "hook":
                 job.hook_engine.status = StageStatus.COMPLETED
+                job.hook_engine.progress = 100
+                job.hook_engine.message = "Hook hoàn tất"
+                job.hook_engine.preview_url = f"/api/jobs/{job_id}/assets/hook"
             if stage.id == "review":
                 job.review_engine.status = StageStatus.COMPLETED
                 job.review_engine.proxy_savings = "42%"

@@ -70,8 +70,11 @@ class JobStage(BaseModel):
 
 class EngineStatus(BaseModel):
     status: StageStatus = StageStatus.PENDING
+    progress: int = Field(default=0, ge=0, le=100)
+    message: str = "Đang chờ"
     elapsed_seconds: float = 0
     output_filename: str
+    preview_url: str | None = None
     proxy_savings: str | None = None
 
 

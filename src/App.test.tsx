@@ -27,8 +27,8 @@ function makeJob(status: VideoJob['status']): VideoJob {
       elapsedSeconds: 4,
     }],
     engines: [
-      { id: 'hook', name: 'Hook Engine', status: status === 'failed' ? 'failed' : 'completed', elapsedSeconds: 8, outputFilename: 'final_hook.mp4' },
-      { id: 'review', name: 'Review Engine', status: status === 'failed' ? 'failed' : 'completed', elapsedSeconds: 12, outputFilename: 'review.mp4' },
+      { id: 'hook', name: 'Hook Engine', status: status === 'failed' ? 'failed' : 'completed', progress: 100, message: 'Hoàn tất', elapsedSeconds: 8, outputFilename: 'final_hook.mp4' },
+      { id: 'review', name: 'Review Engine', status: status === 'failed' ? 'failed' : 'completed', progress: 100, message: 'Hoàn tất', elapsedSeconds: 12, outputFilename: 'review.mp4' },
     ],
     output: status === 'completed' ? {
       filename: 'final_video.mp4',

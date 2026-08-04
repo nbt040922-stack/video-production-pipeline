@@ -56,8 +56,8 @@ export class MockPipelineClient implements PipelineClient {
       elapsedSeconds: 0,
       stages,
       engines: [
-        { id: 'hook', name: 'Hook Engine', status: 'pending', elapsedSeconds: 0, outputFilename: 'final_hook.mp4' },
-        { id: 'review', name: 'Review Engine', status: 'pending', elapsedSeconds: 0, outputFilename: 'review.mp4', proxySavings: 'Đang tính' },
+        { id: 'hook', name: 'Hook Engine', status: 'pending', progress: 0, message: 'Đang chờ', elapsedSeconds: 0, outputFilename: 'final_hook.mp4' },
+        { id: 'review', name: 'Review Engine', status: 'pending', progress: 0, message: 'Đang chờ', elapsedSeconds: 0, outputFilename: 'review.mp4', proxySavings: 'Đang tính' },
       ],
     }
     this.jobs.set(id, job)
