@@ -10,6 +10,7 @@ if (-not (Test-Path ".venv")) {
 
 $Python = Join-Path $Root ".venv\Scripts\python.exe"
 @(
+    "requirements.txt",
     "engines/hook-engine/requirements.txt",
     "engines/review-engine/requirements.txt"
 ) | Where-Object { Test-Path $_ } | ForEach-Object {

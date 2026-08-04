@@ -39,12 +39,13 @@ function makeJob(status: VideoJob['status']): VideoJob {
   }
 }
 
-function stubClient(job: VideoJob): PipelineClient & { createJob: ReturnType<typeof vi.fn> } {
+function stubClient(job: VideoJob): PipelineClient & { createJob: ReturnType<typeof vi.fn>; retryJob: ReturnType<typeof vi.fn> } {
   return {
     inspectSource: vi.fn().mockResolvedValue(source),
     createJob: vi.fn().mockResolvedValue({ jobId: job.id }),
     getJob: vi.fn().mockResolvedValue(job),
     cancelJob: vi.fn().mockResolvedValue(undefined),
+    retryJob: vi.fn().mockResolvedValue({ jobId: job.id }),
   }
 }
 
@@ -80,9 +81,16 @@ describe('App', () => {
     await start(client)
 
     fireEvent.click(await screen.findByRole('button', { name: 'Thử lại' }))
-    await waitFor(() => expect(client.createJob).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(client.retryJob).toHaveBeenCalledWith('job-1'))
     fireEvent.click(screen.getByRole('button', { name: 'Đặt lại' }))
     expect(screen.getByLabelText('Liên kết YouTube')).toHaveValue('')
     expect(screen.queryByText('Mô phỏng lỗi')).not.toBeInTheDocument()
   })
-})
+
+  it('displays backend request errors', async () => {
+    const client = stubClient(makeJob('completed'))
+    client.createJob.mockRejectedValue(new Error('Không thể kết nối backend local.'))
+    await start(client)
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Không thể kết nối backend local.')
+  })})

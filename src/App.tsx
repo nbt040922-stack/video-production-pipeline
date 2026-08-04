@@ -14,7 +14,7 @@ export function App({ client }: { client?: PipelineClient }) {
   const [url, setUrl] = useState('')
   const [source, setSource] = useState<SourceMetadata>()
   const [notice, setNotice] = useState('')
-  const { job, isStarting, start, cancel, reset } = useVideoJob(pipelineClient)
+  const { job, clientError, isStarting, start, cancel, retry, reset } = useVideoJob(pipelineClient)
   const validUrl = isValidYouTubeUrl(url)
   const busy = job?.status === 'validating' || job?.status === 'processing' || isStarting
 
@@ -90,11 +90,13 @@ export function App({ client }: { client?: PipelineClient }) {
               </button>
               {busy && <button className="danger-button" onClick={() => void cancel()}>Hủy công việc</button>}
               {(job?.status === 'failed' || job?.status === 'cancelled') && (
-                <button className="primary-button" onClick={handleStart}>Thử lại</button>
+                <button className="primary-button" onClick={() => void retry()}>Thử lại</button>
               )}
               {job && !busy && <button className="ghost-button" onClick={handleReset}>Đặt lại</button>}
             </div>
-            {job?.error && <div className={`job-alert ${job.status}`} role="alert">{job.error}</div>}
+            {(job?.error || clientError) && (
+              <div className={`job-alert ${job?.status ?? 'failed'}`} role="alert">{job?.error || clientError}</div>
+            )}
           </section>
 
           {(source || job?.source) && <SourcePreview source={job?.source ?? source!} />}

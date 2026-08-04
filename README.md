@@ -122,3 +122,52 @@ npm run build
 See [docs/FRONTEND_ARCHITECTURE.md](docs/FRONTEND_ARCHITECTURE.md) for the component model and future backend integration points.
 
 No screenshot is stored yet. If one is added later, use `docs/screenshots/frontend.png`.
+## Local backend
+
+Install Python and frontend dependencies:
+
+```bash
+./setup.sh
+npm install
+```
+
+On Windows PowerShell:
+
+```powershell
+.\setup.ps1
+npm install
+```
+
+Run backend only:
+
+```bash
+.venv/bin/python -m uvicorn apps.orchestrator.api:app --host 127.0.0.1 --port 8000
+```
+
+Use `.venv\Scripts\python.exe` instead on Windows.
+
+Run frontend against backend:
+
+```bash
+VITE_PIPELINE_MODE=backend VITE_API_BASE_URL=http://127.0.0.1:8000 npm run dev -- --host 127.0.0.1
+```
+
+Run both services:
+
+```bash
+./scripts/dev.sh
+```
+
+```powershell
+.\scripts\dev.ps1
+```
+
+Run all tests and the frontend build:
+
+```bash
+.venv/bin/python -m pytest
+npm test
+npm run build
+```
+
+The backend currently uses deterministic local adapters. It does not download media, call AI services, run FFmpeg, or execute either engine. See [docs/BACKEND_ARCHITECTURE.md](docs/BACKEND_ARCHITECTURE.md) and [docs/API_CONTRACT.md](docs/API_CONTRACT.md).

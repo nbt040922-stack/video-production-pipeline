@@ -9,6 +9,7 @@ if [ ! -d .venv ]; then
 fi
 
 for requirements in \
+    requirements.txt \
     engines/hook-engine/requirements.txt \
     engines/review-engine/requirements.txt
 do
