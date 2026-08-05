@@ -13,6 +13,7 @@ if TYPE_CHECKING:
     from .source_ingestor import SourceResult
 
 ProgressCallback = Callable[[int, str], None]
+ReviewProgressCallback = Callable[[str, int, str], None]
 
 
 class JobCancelled(Exception):
@@ -39,11 +40,12 @@ class HookEngine(Protocol):
     def cleanup(self, job_id: str, workspace: Path) -> None: ...
 
 
-class ReviewEngineAdapter(Protocol):
-    def write_review(self, workspace: Path, cancel: Event, progress: ProgressCallback, fail: bool) -> None: ...
-    def generate_voice(self, workspace: Path, cancel: Event, progress: ProgressCallback) -> None: ...
-    def select_footage(self, workspace: Path, cancel: Event, progress: ProgressCallback) -> None: ...
-    def render(self, workspace: Path, cancel: Event, progress: ProgressCallback) -> None: ...
+class ReviewEngine(Protocol):
+    def prepare(self, request: object) -> None: ...
+    def run(self, request: object, cancel: Event, progress: ReviewProgressCallback) -> object: ...
+    def status(self, job_id: str) -> dict[str, int | str]: ...
+    def cancel(self, job_id: str) -> None: ...
+    def cleanup(self, job_id: str, workspace: Path) -> None: ...
 
 
 class FinalComposer(Protocol):
@@ -168,21 +170,38 @@ class StubHookEngineAdapter:
 class StubReviewEngineAdapter:
     def __init__(self, delay: float) -> None:
         self.delay = delay
+        self._cancelled = Event()
 
-    def write_review(self, workspace: Path, cancel: Event, progress: ProgressCallback, fail: bool) -> None:
-        _work("Đang viết bài đánh giá", self.delay, cancel, progress)
-        if fail:
-            raise RuntimeError("Controlled review adapter failure")
+    def prepare(self, request: object) -> None:
+        return None
 
-    def generate_voice(self, workspace: Path, cancel: Event, progress: ProgressCallback) -> None:
-        _work("Đang tạo giọng đọc", self.delay, cancel, progress)
+    def run(self, request: object, cancel: Event, progress: ReviewProgressCallback) -> object:
+        workspace = Path(getattr(request, "workspace"))
+        for stage, label in (
+            ("script", "Đang viết bài đánh giá"),
+            ("voice", "Đang tạo giọng đọc"),
+            ("footage", "Đang chọn cảnh quay"),
+            ("review", "Đang dựng video đánh giá"),
+        ):
+            for percent in (25, 65, 100):
+                if cancel.wait(self.delay / 3) or self._cancelled.is_set():
+                    raise JobCancelled
+                progress(stage, percent, f"{label}: {percent}%")
+        output = workspace / "review" / "review.mp4"
+        output.write_bytes(b"placeholder review\n")
+        return None
 
-    def select_footage(self, workspace: Path, cancel: Event, progress: ProgressCallback) -> None:
-        _work("Đang chọn cảnh quay", self.delay, cancel, progress)
+    def status(self, job_id: str) -> dict[str, int | str]:
+        return {"status": "stub_ready", "progress": 0, "message": "Stub Review Engine"}
 
-    def render(self, workspace: Path, cancel: Event, progress: ProgressCallback) -> None:
-        _work("Đang dựng video đánh giá", self.delay, cancel, progress)
-        (workspace / "review" / "review.mp4").write_bytes(b"placeholder review\n")
+    def cancel(self, job_id: str) -> None:
+        self._cancelled.set()
+
+    def cleanup(self, job_id: str, workspace: Path) -> None:
+        return None
+
+    def readiness(self) -> dict[str, str]:
+        return {"status": "stub_ready"}
 
 
 class StubFinalComposer:

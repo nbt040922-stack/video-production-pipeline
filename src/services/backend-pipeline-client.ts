@@ -51,6 +51,9 @@ interface BackendJob {
     output_filename: string
     preview_url?: string | null
     proxy_savings?: string
+    fallback_used?: boolean | null
+    fallback_reason?: string | null
+    output_duration_seconds?: number | null
   }
   output: null | {
     filename: string
@@ -147,6 +150,9 @@ export class BackendPipelineClient implements PipelineClient {
           outputFilename: job.review_engine.output_filename,
           previewUrl: job.review_engine.preview_url ? `${this.baseUrl}${job.review_engine.preview_url}` : undefined,
           proxySavings: job.review_engine.proxy_savings,
+          fallbackUsed: job.review_engine.fallback_used ?? undefined,
+          fallbackReason: job.review_engine.fallback_reason ?? undefined,
+          outputDurationSeconds: job.review_engine.output_duration_seconds ?? undefined,
         },
       ],
       output: job.output ? {

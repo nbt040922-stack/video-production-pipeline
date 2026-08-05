@@ -44,12 +44,16 @@ export function EngineCards({ engines }: { engines: EngineStatus[] }) {
                 <h3>{engine.name}</h3>
                 <span className={`status-pill ${engine.status}`}>{statusLabels[engine.status]}</span>
               </div>
-              {engine.id === 'hook' && engine.status === 'running' && (
-                <p className="engine-progress" aria-live="polite">{engine.message} · {engine.progress}%</p>
+              {(engine.status === 'running' || engine.status === 'failed') && (
+                <p className="engine-progress" aria-live="polite">
+                  {engine.message}{engine.status === 'running' ? ` · ${engine.progress}%` : ''}
+                </p>
               )}
               <dl className="engine-stats">
                 <div><dt>Thời gian</dt><dd>{engine.elapsedSeconds ? `${engine.elapsedSeconds} giây` : '—'}</dd></div>
                 {engine.proxySavings && <div><dt>Tiết kiệm proxy</dt><dd>{engine.proxySavings}</dd></div>}
+                {engine.id === 'review' && engine.fallbackUsed && <div><dt>Proxy</dt><dd>Đã dùng toàn bộ nguồn</dd></div>}
+                {engine.id === 'review' && engine.outputDurationSeconds && <div><dt>Thời lượng review</dt><dd>{engine.outputDurationSeconds.toFixed(1)} giây</dd></div>}
                 <div><dt>Đầu ra</dt><dd>{engine.status === 'completed' ? engine.outputFilename : 'Đang chờ'}</dd></div>
               </dl>
             </div>

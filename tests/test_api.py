@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from apps.orchestrator.adapters import StubHookEngineAdapter, StubSourceIngestor
+from apps.orchestrator.adapters import StubHookEngineAdapter, StubReviewEngineAdapter, StubSourceIngestor
 from apps.orchestrator.api import create_app
 from apps.orchestrator.job_manager import JobManager
 
@@ -20,6 +20,7 @@ def make_manager(path: Path, delay: float = 0.01) -> JobManager:
         step_delay=delay,
         source_ingestor=StubSourceIngestor(delay),
         hook_engine=StubHookEngineAdapter(delay),
+        review_engine=StubReviewEngineAdapter(delay),
     )
 
 

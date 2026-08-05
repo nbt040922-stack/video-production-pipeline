@@ -47,14 +47,15 @@ def create_app(manager: JobManager | None = None) -> FastAPI:
     def health() -> dict:
         source_readiness = job_manager.source_readiness()
         hook_readiness = job_manager.hook_readiness()
+        review_readiness = job_manager.review_readiness()
         return {
-            "status": "ok" if all(item["status"] != "missing_dependency" for item in (source_readiness, hook_readiness)) else "degraded",
-            "mode": "real_source_real_hook_stub_review_composer",
+            "status": "ok" if all(item["status"] != "missing_dependency" for item in (source_readiness, hook_readiness, review_readiness)) else "degraded",
+            "mode": "real_source_real_hook_real_review_stub_composer",
             "workspace": str(job_manager.workspace),
             "dependencies": {
                 "source_ingestor": source_readiness,
                 "hook_engine": hook_readiness,
-                "review_engine": "stub_ready",
+                "review_engine": review_readiness,
                 "final_composer": "stub_ready",
             },
         }
@@ -78,6 +79,18 @@ def create_app(manager: JobManager | None = None) -> FastAPI:
     @app.get("/api/jobs/{job_id}/assets/hook")
     def get_hook(job_id: str) -> FileResponse:
         return FileResponse(job_manager.hook_path(job_id), media_type="video/mp4")
+
+    @app.get("/api/jobs/{job_id}/assets/review")
+    def get_review(job_id: str) -> FileResponse:
+        return FileResponse(job_manager.review_asset_path(job_id, "review.mp4"), media_type="video/mp4")
+
+    @app.get("/api/jobs/{job_id}/assets/review-metadata")
+    def get_review_metadata(job_id: str) -> FileResponse:
+        return FileResponse(job_manager.review_asset_path(job_id, "metadata.json"), media_type="application/json")
+
+    @app.get("/api/jobs/{job_id}/assets/proxy-metrics")
+    def get_proxy_metrics(job_id: str) -> FileResponse:
+        return FileResponse(job_manager.review_asset_path(job_id, "proxy_metrics.json"), media_type="application/json")
 
     @app.post("/api/jobs/{job_id}/cancel")
     def cancel_job(job_id: str) -> dict:

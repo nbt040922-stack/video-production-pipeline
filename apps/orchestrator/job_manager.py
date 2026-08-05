@@ -15,12 +15,18 @@ from .adapters import (
     FinalComposer,
     HookEngine,
     JobCancelled,
-    ReviewEngineAdapter,
+    ReviewEngine,
     SourceIngestor,
     StubFinalComposer,
     StubReviewEngineAdapter,
 )
 from .hook_engine_adapter import HookEngineAdapter, HookEngineError
+from .review_engine_adapter import (
+    ReviewEngineAdapter,
+    ReviewEngineError,
+    ReviewEngineInput,
+    ReviewEngineResult,
+)
 from .models import (
     EngineStatus,
     ErrorData,
@@ -65,7 +71,7 @@ class JobManager:
         step_delay: float = 0.3,
         source_ingestor: SourceIngestor | None = None,
         hook_engine: HookEngine | None = None,
-        review_engine: ReviewEngineAdapter | None = None,
+        review_engine: ReviewEngine | None = None,
         composer: FinalComposer | None = None,
     ) -> None:
         self.workspace = Path(workspace).resolve()
@@ -78,7 +84,7 @@ class JobManager:
         self.step_delay = step_delay
         self.source_ingestor = source_ingestor or RealSourceIngestor()
         self.hook_engine = hook_engine or HookEngineAdapter()
-        self.review_engine = review_engine or StubReviewEngineAdapter(step_delay)
+        self.review_engine = review_engine or ReviewEngineAdapter()
         self.composer = composer or StubFinalComposer(step_delay)
         self._recover_jobs()
 
@@ -134,11 +140,14 @@ class JobManager:
             if job.status in {JobStatus.COMPLETED, JobStatus.FAILED}:
                 raise PipelineError("INVALID_JOB_STATE", "Không thể hủy công việc đã kết thúc.", 409)
             cancel_hook = job.current_stage == "hook"
+            cancel_review = job.current_stage in {"script", "voice", "footage", "review"}
             self._cancel_events[job_id].set()
             self._mark_cancelled(self._jobs[job_id])
             result = self._jobs[job_id].model_copy(deep=True)
         if cancel_hook:
             self.hook_engine.cancel(job_id)
+        if cancel_review:
+            self.review_engine.cancel(job_id)
         return result
 
     def retry_job(self, job_id: str) -> VideoJob:
@@ -167,7 +176,10 @@ class JobManager:
                 raise JobCancelled
             source_result: SourceResult | None = None
 
+            review_complete = False
             for index, (stage_id, _name) in enumerate(STAGES):
+                if review_complete and stage_id in {"voice", "footage", "review"}:
+                    continue
                 self._start_stage(job_id, index)
                 workspace = self._job_dir(job_id)
                 progress = lambda value, message, active_stage=stage_id: self._report_progress(
@@ -187,7 +199,11 @@ class JobManager:
                     self._apply_source_result(job_id, source_result)
                 else:
                     self._run_non_source_stage(job_id, stage_id, cancel, progress)
-                self._finish_stage(job_id, index)
+                if stage_id == "script":
+                    review_complete = True
+                    self._finish_review(job_id)
+                else:
+                    self._finish_stage(job_id, index)
 
             with self._lock:
                 job = self._jobs[job_id]
@@ -215,7 +231,7 @@ class JobManager:
                 current = next((stage for stage in job.stages if stage.status == StageStatus.RUNNING), None)
                 error = (
                     ErrorData(code=exc.code, message=exc.message)
-                    if isinstance(exc, (SourceIngestorError, HookEngineError))
+                    if isinstance(exc, (SourceIngestorError, HookEngineError, ReviewEngineError))
                     else ErrorData(code="WORKER_ERROR", message="Xử lý công việc thất bại.")
                 )
                 if current:
@@ -229,6 +245,7 @@ class JobManager:
                 job.error = error
                 if job.review_engine.status == StageStatus.RUNNING:
                     job.review_engine.status = StageStatus.FAILED
+                    job.review_engine.message = error.message
                 if job.hook_engine.status == StageStatus.RUNNING:
                     job.hook_engine.status = StageStatus.FAILED
                     job.hook_engine.message = error.message
@@ -243,10 +260,7 @@ class JobManager:
         fail = "fixture=fail" in job.youtube_url and job.attempt == 1
         actions = {
             "hook": lambda: self._run_hook(job_id, workspace, cancel, progress),
-            "script": lambda: self.review_engine.write_review(workspace, cancel, progress, fail),
-            "voice": lambda: self.review_engine.generate_voice(workspace, cancel, progress),
-            "footage": lambda: self.review_engine.select_footage(workspace, cancel, progress),
-            "review": lambda: self.review_engine.render(workspace, cancel, progress),
+            "script": lambda: self._run_review(job_id, workspace, cancel, fail),
             "compose": lambda: self.composer.compose(workspace, cancel, progress),
             "validate": lambda: self.composer.validate(workspace, cancel, progress),
         }
@@ -259,6 +273,31 @@ class JobManager:
             self.hook_engine.run(thumbnail, job_id, workspace, cancel, progress)
         finally:
             self.hook_engine.cleanup(job_id, workspace)
+
+    def _run_review(self, job_id: str, workspace: Path, cancel: Event, fail: bool) -> None:
+        if fail:
+            raise RuntimeError("Controlled review adapter failure")
+        job = self.get_job(job_id)
+        request = ReviewEngineInput(
+            job_id=job_id,
+            youtube_url=job.youtube_url,
+            source_video_path=workspace / "source" / "source.mp4",
+            source_metadata_path=workspace / "source" / "metadata.json",
+            workspace=workspace,
+        )
+        self.review_engine.prepare(request)
+        try:
+            result = self.review_engine.run(
+                request,
+                cancel,
+                lambda stage, value, message: self._report_review_progress(
+                    job_id, stage, value, message
+                ),
+            )
+            if isinstance(result, ReviewEngineResult):
+                self._apply_review_result(job_id, result)
+        finally:
+            self.review_engine.cleanup(job_id, workspace)
 
     def _apply_source_result(self, job_id: str, result: SourceResult) -> None:
         with self._lock:
@@ -286,6 +325,10 @@ class JobManager:
         readiness = getattr(self.hook_engine, "readiness", None)
         return readiness() if readiness else {"status": "ready"}
 
+    def review_readiness(self) -> dict[str, str]:
+        readiness = getattr(self.review_engine, "readiness", None)
+        return readiness() if readiness else {"status": "ready"}
+
     def thumbnail_path(self, job_id: str) -> Path:
         job = self.get_job(job_id)
         path = self._job_dir(job.job_id) / "source" / "thumbnail.jpg"
@@ -299,6 +342,87 @@ class JobManager:
         if job.hook_engine.status != StageStatus.COMPLETED or not path.is_file():
             raise PipelineError("HOOK_NOT_FOUND", "Không tìm thấy video Hook của công việc.", 404)
         return path
+
+    def review_asset_path(self, job_id: str, filename: str) -> Path:
+        job = self.get_job(job_id)
+        allowed = {
+            "review.mp4": ("review.mp4", StageStatus.COMPLETED),
+            "metadata.json": ("metadata.json", StageStatus.COMPLETED),
+            "proxy_metrics.json": ("proxy_metrics.json", StageStatus.COMPLETED),
+        }
+        if filename not in allowed or job.review_engine.status != allowed[filename][1]:
+            raise PipelineError("REVIEW_ASSET_NOT_FOUND", "Không tìm thấy dữ liệu Review của công việc.", 404)
+        path = (self._job_dir(job_id) / "review" / allowed[filename][0]).resolve()
+        if path.parent != (self._job_dir(job_id) / "review").resolve() or not path.is_file():
+            raise PipelineError("REVIEW_ASSET_NOT_FOUND", "Không tìm thấy dữ liệu Review của công việc.", 404)
+        return path
+
+    def _report_review_progress(self, job_id: str, stage_id: str, progress: int, message: str) -> None:
+        review_ids = ("script", "voice", "footage", "review")
+        if stage_id not in review_ids:
+            return
+        with self._lock:
+            job = self._jobs[job_id]
+            if job.status == JobStatus.CANCELLED:
+                raise JobCancelled
+            active_index = review_ids.index(stage_id)
+            for previous_id in review_ids[:active_index]:
+                previous = next(stage for stage in job.stages if stage.id == previous_id)
+                if previous.status != StageStatus.COMPLETED:
+                    previous.status = StageStatus.COMPLETED
+                    previous.progress = 100
+                    previous.finished_at = utc_now()
+                    previous.elapsed_seconds = self._elapsed(previous.started_at)
+                    previous.message = "Hoàn tất"
+            stage = next(stage for stage in job.stages if stage.id == stage_id)
+            if stage.status == StageStatus.PENDING:
+                stage.status = StageStatus.RUNNING
+                stage.started_at = utc_now()
+            stage.progress = progress
+            stage.message = message
+            stage.elapsed_seconds = self._elapsed(stage.started_at)
+            job.current_stage = stage_id
+            job.status = JobStatus.PROCESSING
+            job.review_engine.status = StageStatus.RUNNING
+            job.review_engine.progress = round(sum(
+                next(item for item in job.stages if item.id == current).progress
+                for current in review_ids
+            ) / len(review_ids))
+            job.review_engine.message = message
+            job.progress_percentage = round(sum(item.progress for item in job.stages) / len(job.stages))
+            job.elapsed_seconds = self._elapsed(job.started_at)
+            self._update_engine_elapsed(job)
+            self._persist(job)
+
+    def _apply_review_result(self, job_id: str, result: ReviewEngineResult) -> None:
+        with self._lock:
+            engine = self._jobs[job_id].review_engine
+            engine.proxy_savings = f"{result.saved_percentage:.1f}%".replace(".", ",")
+            engine.fallback_used = result.fallback_used
+            engine.fallback_reason = result.fallback_reason
+            engine.output_duration_seconds = result.duration_seconds
+            engine.elapsed_seconds = result.runtime_seconds
+            self._persist(self._jobs[job_id])
+
+    def _finish_review(self, job_id: str) -> None:
+        with self._lock:
+            job = self._jobs[job_id]
+            for stage in job.stages:
+                if stage.id in {"script", "voice", "footage", "review"}:
+                    stage.status = StageStatus.COMPLETED
+                    stage.progress = 100
+                    stage.started_at = stage.started_at or utc_now()
+                    stage.finished_at = utc_now()
+                    stage.elapsed_seconds = self._elapsed(stage.started_at)
+                    stage.message = "Hoàn tất"
+            job.review_engine.status = StageStatus.COMPLETED
+            job.review_engine.progress = 100
+            job.review_engine.message = "Review hoàn tất"
+            job.review_engine.preview_url = f"/api/jobs/{job_id}/assets/review"
+            job.progress_percentage = round(sum(item.progress for item in job.stages) / len(job.stages))
+            self._update_engine_elapsed(job)
+            self._persist(job)
+            self._log(job_id, "Review Engine completed")
 
     @staticmethod
     def _format_duration(seconds: float) -> str:
@@ -386,9 +510,10 @@ class JobManager:
 
     def _update_engine_elapsed(self, job: VideoJob) -> None:
         job.hook_engine.elapsed_seconds = sum(stage.elapsed_seconds for stage in job.stages if stage.id == "hook")
-        job.review_engine.elapsed_seconds = sum(
-            stage.elapsed_seconds for stage in job.stages if stage.id in {"script", "voice", "footage", "review"}
-        )
+        if job.review_engine.status != StageStatus.COMPLETED:
+            job.review_engine.elapsed_seconds = sum(
+                stage.elapsed_seconds for stage in job.stages if stage.id in {"script", "voice", "footage", "review"}
+            )
 
     def _recover_jobs(self) -> None:
         for metadata in self.workspace.glob("*/metadata/job.json"):

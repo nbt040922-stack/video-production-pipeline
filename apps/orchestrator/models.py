@@ -76,6 +76,9 @@ class EngineStatus(BaseModel):
     output_filename: str
     preview_url: str | None = None
     proxy_savings: str | None = None
+    fallback_used: bool | None = None
+    fallback_reason: str | None = None
+    output_duration_seconds: float | None = None
 
 
 class SourceMetadata(BaseModel):

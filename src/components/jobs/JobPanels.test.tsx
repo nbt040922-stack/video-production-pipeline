@@ -43,4 +43,40 @@ describe('Job panels', () => {
       'src', 'http://api/api/jobs/job-1/assets/hook',
     )
   })
+
+  it('shows real Review progress, proxy result, fallback, and preview', () => {
+    const { rerender } = render(<EngineCards engines={[
+      {
+        id: 'review', name: 'Review Engine', status: 'running', progress: 54,
+        message: 'Đang chọn cảnh', elapsedSeconds: 30, outputFilename: 'review.mp4',
+      },
+    ]} />)
+    expect(screen.getByText('Đang chọn cảnh · 54%')).toBeInTheDocument()
+
+    rerender(<EngineCards engines={[
+      {
+        id: 'review', name: 'Review Engine', status: 'completed', progress: 100,
+        message: 'Review hoàn tất', elapsedSeconds: 90, outputFilename: 'review.mp4',
+        previewUrl: 'http://api/api/jobs/job-1/assets/review', proxySavings: '50,4%',
+        fallbackUsed: true, fallbackReason: 'full_source', outputDurationSeconds: 104.25,
+      },
+    ]} />)
+    expect(screen.getByText('50,4%')).toBeInTheDocument()
+    expect(screen.getByText('Đã dùng toàn bộ nguồn')).toBeInTheDocument()
+    expect(screen.getByText('104.3 giây')).toBeInTheDocument()
+    expect(screen.getByLabelText('Xem trước Review Engine')).toHaveAttribute(
+      'src', 'http://api/api/jobs/job-1/assets/review',
+    )
+  })
+
+  it('shows Review failure state', () => {
+    render(<EngineCards engines={[
+      {
+        id: 'review', name: 'Review Engine', status: 'failed', progress: 20,
+        message: 'Không thể viết kịch bản review.', elapsedSeconds: 4, outputFilename: 'review.mp4',
+      },
+    ]} />)
+    expect(screen.getByText('Thất bại')).toBeInTheDocument()
+    expect(screen.getByText('Không thể viết kịch bản review.')).toBeInTheDocument()
+  })
 })

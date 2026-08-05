@@ -11,7 +11,7 @@ React UI
   -> BackendPipelineClient
   -> FastAPI job API
   -> JobManager
-  -> real source ingestor + real Hook adapter + Review/Composer stubs
+  -> real source ingestor + real Hook adapter + real Review adapter + Composer stub
   -> isolated workspace + atomic job.json + pipeline.log
 ```
 
@@ -48,7 +48,7 @@ Job IDs are 32 lowercase hexadecimal UUID values. Directory creation rejects col
 
 ## Cancellation
 
-Each active job owns a `threading.Event`. Cancellation sets the event, marks unfinished stages cancelled, persists metadata, and returns immediately. Source and stub adapters check the event during work. The Hook adapter also interrupts ComfyUI and terminates its active CLI process tree.
+Each active job owns a `threading.Event`. Cancellation sets the event, marks unfinished stages cancelled, persists metadata, and returns immediately. Source and Composer adapters check the event during work. Hook terminates its active process tree. Review first signals its headless CLI so engine cleanup can run, then force-terminates only after a grace period.
 
 ## Startup recovery
 
@@ -56,9 +56,9 @@ Each active job owns a `threading.Event`. Cancellation sets the event, marks unf
 
 ## Pipeline adapters
 
-The backend defines adapter boundaries for Source, Hook, Review, and Composer. Source ingestion uses yt-dlp, Pillow, FFmpeg, and ffprobe. `HookEngineAdapter` wraps the black-box Hook CLI (`generate`, then `phase4`) and validates its output with ffprobe. Review and Composer still write deterministic placeholder artifacts.
+The backend defines adapter boundaries for Source, Hook, Review, and Composer. Source ingestion uses yt-dlp, Pillow, FFmpeg, and ffprobe. `HookEngineAdapter` wraps the black-box Hook CLI (`generate`, then `phase4`). `ReviewEngineAdapter` wraps `review_cli.py run --progress-jsonl`, consumes structured progress, and validates media/proxy artifacts. Composer still writes deterministic placeholder artifacts.
 
-Future real Review and Composer adapters replace their constructor dependencies. Engine submodules remain untouched and hidden behind adapter boundaries.
+Engine submodules remain untouched and hidden behind adapter boundaries. A future real Composer replaces only its constructor dependency.
 
 ## Frontend mode
 

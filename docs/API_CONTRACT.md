@@ -6,7 +6,7 @@ Base URL: `http://127.0.0.1:8000`
 
 `GET /api/health`
 
-Returns backend mode, workspace location, real Source Ingestor readiness, real Hook Engine readiness, and Review/Composer stub readiness.
+Returns backend mode, workspace location, real Source, Hook, and Review readiness, plus Composer stub readiness. Credential values are never returned.
 
 ## Create job
 
@@ -46,6 +46,14 @@ Returns the validated `image/jpeg` thumbnail for one job. Missing or unknown ass
 
 Returns validated `video/mp4` only after the Hook stage completes. The endpoint resolves only the known `hook/final_hook.mp4` job asset and cannot read arbitrary paths.
 
+## Review assets
+
+- `GET /api/jobs/{job_id}/assets/review` returns validated `review.mp4`.
+- `GET /api/jobs/{job_id}/assets/review-metadata` returns normalized Review metadata.
+- `GET /api/jobs/{job_id}/assets/proxy-metrics` returns proxy cost metrics.
+
+These routes resolve fixed files inside one validated job workspace. They do not accept arbitrary filesystem paths.
+
 ## Cancel job
 
 `POST /api/jobs/{job_id}/cancel`
@@ -79,7 +87,7 @@ Errors never include Python tracebacks:
 }
 ```
 
-Codes include source errors such as `INVALID_YOUTUBE_URL`, `PLAYLIST_NOT_SUPPORTED`, `YTDLP_MISSING`, `FFMPEG_MISSING`, `FFPROBE_FAILED`, `PRIVATE_VIDEO`, `VIDEO_UNAVAILABLE`, `AUTH_REQUIRED`, and `DOWNLOAD_FAILED`; Hook errors such as `HOOK_THUMBNAIL_MISSING`, `HOOK_ENGINE_NOT_READY`, `HOOK_ENGINE_FAILED`, `HOOK_TIMEOUT`, `HOOK_OUTPUT_MISSING`, and `HOOK_OUTPUT_INVALID`; plus `JOB_NOT_FOUND`, `INVALID_JOB_STATE`, `CORRUPTED_JOB_METADATA`, `JOB_CANCELLED`, `INTERRUPTED`, and `WORKER_ERROR`. Full worker tracebacks are written only to the job's `logs/pipeline.log`.
+Codes include source errors such as `INVALID_YOUTUBE_URL`, `PLAYLIST_NOT_SUPPORTED`, `YTDLP_MISSING`, `FFMPEG_MISSING`, `FFPROBE_FAILED`, `PRIVATE_VIDEO`, `VIDEO_UNAVAILABLE`, `AUTH_REQUIRED`, and `DOWNLOAD_FAILED`; Hook errors such as `HOOK_THUMBNAIL_MISSING`, `HOOK_ENGINE_NOT_READY`, `HOOK_ENGINE_FAILED`, `HOOK_TIMEOUT`, `HOOK_OUTPUT_MISSING`, and `HOOK_OUTPUT_INVALID`; Review errors documented in `REVIEW_ENGINE_ADAPTER.md`; plus `JOB_NOT_FOUND`, `INVALID_JOB_STATE`, `CORRUPTED_JOB_METADATA`, `JOB_CANCELLED`, `INTERRUPTED`, and `WORKER_ERROR`. Full worker tracebacks are written only to the job's `logs/pipeline.log`.
 
 ## Controlled failure
 

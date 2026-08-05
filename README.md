@@ -13,7 +13,7 @@ YouTube URL -> Downloader -> Hook Engine -> Review Engine -> Composer -> Final V
 - **Hook Engine** produces `final_hook.mp4`.
 - **Review Engine** produces `review.mp4`.
 - **Composer** will combine those outputs into the final video.
-- **Orchestrator** coordinates the real Source and Hook stages while Review and Composer remain stubs.
+- **Orchestrator** coordinates the real Source, Hook, and Review stages while Composer remains a stub.
 
 See [docs/Architecture.md](docs/Architecture.md) for component boundaries and data flow.
 
@@ -105,7 +105,7 @@ python -m apps.orchestrator
 ```
 ## Frontend prototype
 
-The desktop-first React frontend defaults to mock mode. Backend mode polls the local orchestrator and previews real Source and Hook assets.
+The desktop-first React frontend defaults to mock mode. Backend mode polls the local orchestrator and previews real Source, Hook, and Review assets.
 
 ```bash
 npm install
@@ -152,7 +152,7 @@ Run frontend against backend:
 VITE_PIPELINE_MODE=backend VITE_API_BASE_URL=http://127.0.0.1:8000 npm run dev -- --host 127.0.0.1
 ```
 
-Run both services:
+Run frontend, parent backend, and Hook ComfyUI runtime:
 
 ```bash
 ./scripts/dev.sh
@@ -170,7 +170,7 @@ npm test
 npm run build
 ```
 
-The source stage uses yt-dlp, Pillow, FFmpeg, and ffprobe. The Hook stage wraps the real Hook Engine CLI. Review and Composer remain deterministic local adapters. See [docs/BACKEND_ARCHITECTURE.md](docs/BACKEND_ARCHITECTURE.md) and [docs/API_CONTRACT.md](docs/API_CONTRACT.md).
+The source stage uses yt-dlp, Pillow, FFmpeg, and ffprobe. Hook and Review wrap their engines' supported CLIs. Composer remains a deterministic local stub. See [docs/BACKEND_ARCHITECTURE.md](docs/BACKEND_ARCHITECTURE.md) and [docs/API_CONTRACT.md](docs/API_CONTRACT.md).
 ## Real source ingestion
 
 Install dependencies through `setup.ps1` or `setup.sh`. FFmpeg and ffprobe must be available on `PATH`, or configured through `FFMPEG_PATH` and `FFPROBE_PATH`.
@@ -188,7 +188,9 @@ See [docs/SOURCE_INGESTOR.md](docs/SOURCE_INGESTOR.md). Default tests mock yt-dl
 
 The Hook adapter passes `workspace/<job_id>/source/thumbnail.jpg` to the existing Hook Engine CLI, runs `generate` and `phase4`, validates the five-second video with ffprobe, and exposes `hook/final_hook.mp4` for preview. Hook Engine internals and submodule history remain untouched.
 
-A complete local engine runtime needs ComfyUI, Wan resources, an approved motion, FFmpeg, ffprobe, and the engine Python environment. Configure `HOOK_ENGINE_PATH`, `HOOK_ENGINE_PYTHON`, and `HOOK_MOTION_ID`; start ComfyUI before creating a real job.
+A complete local engine runtime needs ComfyUI, Wan resources, an approved motion, FFmpeg, ffprobe, and the engine Python environment. Configure `HOOK_ENGINE_PATH`, `HOOK_ENGINE_PYTHON`, and `HOOK_MOTION_ID` when runtime is not in the default sibling location.
+
+`scripts/dev.ps1` and `scripts/dev.sh` now start ComfyUI automatically when it is not already healthy. They prefer a complete sibling `AI_hook_engine` checkout, otherwise use `HOOK_ENGINE_PATH`. Review Engine remains an on-demand CLI subprocess and needs no background server.
 
 Manual adapter smoke test:
 
@@ -200,3 +202,11 @@ $env:HOOK_MOTION_ID='motion1'
 ```
 
 See [docs/HOOK_ENGINE_ADAPTER.md](docs/HOOK_ENGINE_ADAPTER.md). Automated tests do not run ComfyUI or GPU generation.
+
+## Real Review Engine integration
+
+The Review adapter passes the existing `source/source.mp4` to `review_cli.py run --progress-jsonl`, maps structured engine events into the four approved Review stages, validates `review.mp4` and proxy mapping data, then exposes the real preview and savings/fallback metadata. Composer remains stubbed.
+
+Configure `REVIEW_ENGINE_PATH`, `REVIEW_ENGINE_PYTHON`, `REVIEW_VOICE_REFERENCE_PATH`, `GEMINI_API_KEY`, and `TWELVE_LABS_API_KEY`. `USE_PROXY_VIDEO` defaults to `true`. OmniVoice must be installed in the Review Engine as documented there.
+
+See [docs/REVIEW_ENGINE_ADAPTER.md](docs/REVIEW_ENGINE_ADAPTER.md). Default tests never call paid services.

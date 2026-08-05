@@ -93,9 +93,15 @@ def test_rejects_non_youtube_and_playlist_urls(url: str) -> None:
 
 def test_deterministic_paths_thumbnail_and_metadata(tmp_path: Path) -> None:
     root = workspace(tmp_path)
+    captured_options = {}
+
+    def factory(options: dict[str, Any]) -> FakeYDL:
+        captured_options.update(options)
+        return FakeYDL(options)
+
     ingestor = RealSourceIngestor(
         config(),
-        ydl_factory=lambda options: FakeYDL(options),
+        ydl_factory=factory,
         probe_runner=lambda _path: PROBE,
     )
 
@@ -109,6 +115,8 @@ def test_deterministic_paths_thumbnail_and_metadata(tmp_path: Path) -> None:
     assert metadata["source_video_path"] == "source/source.mp4"
     assert metadata["thumbnail_path"] == "source/thumbnail.jpg"
     assert metadata["youtube_video_id"] == "abc123"
+    assert captured_options["noplaylist"] is True
+    assert "max_downloads" not in captured_options
     with Image.open(result.thumbnail_path) as thumbnail:
         assert thumbnail.format == "JPEG"
         assert thumbnail.size == (640, 360)

@@ -69,7 +69,7 @@ Metadata contains parent job ID, engine job ID, motion ID, relative input/output
 
 ## Manual smoke test
 
-Start the Hook Engine's ComfyUI runtime first. On Windows, for the existing standalone runtime:
+The parent development script starts Hook ComfyUI automatically and waits for `/system_stats` readiness. On Windows, configure the existing standalone runtime before starting the parent:
 
 ```powershell
 $env:HOOK_ENGINE_PATH='D:\AI_hook_engine'

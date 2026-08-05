@@ -18,10 +18,13 @@ HookEngineAdapter
 Hook Engine CLI (generate + phase4)
     |
     v
-hook/final_hook.mp4
+hook/final_hook.mp4 + source/source.mp4
     |
     v
-Review Engine stub -> Composer stub -> Final Video
+ReviewEngineAdapter -> Review Engine CLI -> review/review.mp4
+    |
+    v
+Composer stub -> Final Video
 ```
 
 ## Component boundaries
@@ -40,11 +43,11 @@ The independently versioned `engines/hook-engine` submodule remains a black box.
 
 ### Review Engine
 
-The `engines/review-engine` submodule remains untouched. M04 still uses the parent Review stub.
+The independently versioned `engines/review-engine` submodule remains a black box. Its supported headless CLI accepts the parent's source video and emits structured JSONL progress plus Review media and proxy artifacts.
 
 ### Composer
 
-Composer remains a stub that preserves the existing end-to-end job flow. Real composition is outside M04.
+Composer remains a stub that preserves the existing end-to-end job flow. Real composition is outside M05.
 
 ### Orchestrator
 
@@ -57,7 +60,10 @@ workspace/<job_id>/
 ├── source/thumbnail.jpg
 ├── hook/final_hook.mp4
 ├── hook/metadata.json
-├── review/
+├── review/review.mp4
+├── review/metadata.json
+├── review/proxy_metrics.json
+├── review/window_mapping.json
 ├── final/
 ├── metadata/job.json
 └── logs/pipeline.log

@@ -43,6 +43,9 @@ export interface EngineStatus {
   outputFilename: string
   previewUrl?: string
   proxySavings?: string
+  fallbackUsed?: boolean
+  fallbackReason?: string
+  outputDurationSeconds?: number
 }
 
 export interface OutputMetadata {

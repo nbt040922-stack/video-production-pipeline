@@ -188,7 +188,6 @@ class RealSourceIngestor:
             "getcomments": False,
             "noplaylist": True,
             "playlistend": 1,
-            "max_downloads": 1,
             "socket_timeout": min(60, self.config.download_timeout_seconds),
             "retries": 2,
             "fragment_retries": 2,
