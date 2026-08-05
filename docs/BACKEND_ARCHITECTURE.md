@@ -11,7 +11,7 @@ React UI
   -> BackendPipelineClient
   -> FastAPI job API
   -> JobManager
-  -> real source ingestor + real Hook adapter + real Review adapter + Composer stub
+  -> real source ingestor + real Hook adapter + real Review adapter + FFmpeg Final Composer
   -> isolated workspace + atomic job.json + pipeline.log
 ```
 
@@ -56,9 +56,9 @@ Each active job owns a `threading.Event`. Cancellation sets the event, marks unf
 
 ## Pipeline adapters
 
-The backend defines adapter boundaries for Source, Hook, Review, and Composer. Source ingestion uses yt-dlp, Pillow, FFmpeg, and ffprobe. `HookEngineAdapter` wraps the black-box Hook CLI (`generate`, then `phase4`). `ReviewEngineAdapter` wraps `review_cli.py run --progress-jsonl`, consumes structured progress, and validates media/proxy artifacts. Composer still writes deterministic placeholder artifacts.
+The backend defines adapter boundaries for Source, Hook, Review, and Composer. Source ingestion uses yt-dlp, Pillow, FFmpeg, and ffprobe. `HookEngineAdapter` wraps the black-box Hook CLI (`generate`, then `phase4`). `ReviewEngineAdapter` wraps `review_cli.py run --progress-jsonl`, consumes structured progress, and validates media/proxy artifacts. `FinalComposer` uses FFmpeg concat with a normalized re-encode fallback and validates the finished media with ffprobe.
 
-Engine submodules remain untouched and hidden behind adapter boundaries. A future real Composer replaces only its constructor dependency.
+Engine submodules remain untouched and hidden behind adapter boundaries.
 
 ## Frontend mode
 

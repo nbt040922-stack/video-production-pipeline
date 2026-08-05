@@ -60,6 +60,7 @@ interface BackendJob {
     resolution: string
     duration: string
     file_size: string
+    preview_url?: string | null
   }
   error?: { message: string } | null
 }
@@ -97,6 +98,10 @@ export class BackendPipelineClient implements PipelineClient {
   async retryJob(jobId: string): Promise<CreateJobResult> {
     const job = await this.request<BackendJob>(`/api/jobs/${jobId}/retry`, { method: 'POST' })
     return { jobId: job.job_id }
+  }
+
+  async openOutputFolder(jobId: string): Promise<void> {
+    await this.request(`/api/jobs/${jobId}/open-folder`, { method: 'POST' })
   }
 
   private async request<T = unknown>(path: string, init?: RequestInit): Promise<T> {
@@ -160,6 +165,7 @@ export class BackendPipelineClient implements PipelineClient {
         resolution: job.output.resolution,
         duration: job.output.duration,
         fileSize: job.output.file_size,
+        previewUrl: job.output.preview_url ? `${this.baseUrl}${job.output.preview_url}` : undefined,
       } : undefined,
     }
   }

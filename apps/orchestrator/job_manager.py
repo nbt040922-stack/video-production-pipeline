@@ -17,9 +17,8 @@ from .adapters import (
     JobCancelled,
     ReviewEngine,
     SourceIngestor,
-    StubFinalComposer,
-    StubReviewEngineAdapter,
 )
+from .final_composer import FinalComposer as RealFinalComposer, FinalComposerError
 from .hook_engine_adapter import HookEngineAdapter, HookEngineError
 from .review_engine_adapter import (
     ReviewEngineAdapter,
@@ -85,7 +84,7 @@ class JobManager:
         self.source_ingestor = source_ingestor or RealSourceIngestor()
         self.hook_engine = hook_engine or HookEngineAdapter()
         self.review_engine = review_engine or ReviewEngineAdapter()
-        self.composer = composer or StubFinalComposer(step_delay)
+        self.composer = composer or RealFinalComposer()
         self._recover_jobs()
 
     def create_job(self, youtube_url: str, retry_of: str | None = None, attempt: int = 1) -> VideoJob:
@@ -208,6 +207,7 @@ class JobManager:
             with self._lock:
                 job = self._jobs[job_id]
                 output_path = self._job_dir(job_id) / "final" / "final_video.mp4"
+                metadata = json.loads((output_path.parent / "metadata.json").read_text(encoding="utf-8"))
                 job.status = JobStatus.COMPLETED
                 job.current_stage = None
                 job.progress_percentage = 100
@@ -215,10 +215,11 @@ class JobManager:
                 job.elapsed_seconds = self._elapsed(job.started_at)
                 job.output = OutputMetadata(
                     filename=output_path.name,
-                    resolution="1920×1080",
-                    duration="13:02",
-                    file_size=f"{output_path.stat().st_size} B",
+                    resolution=f"{metadata['width']}×{metadata['height']}",
+                    duration=self._format_duration(float(metadata["duration_seconds"])),
+                    file_size=self._format_size(int(metadata["file_size_bytes"])),
                     relative_path=f"{job_id}/final/{output_path.name}",
+                    preview_url=f"/api/jobs/{job_id}/assets/final",
                 )
                 self._persist(job)
                 self._log(job_id, "Job completed")
@@ -231,7 +232,7 @@ class JobManager:
                 current = next((stage for stage in job.stages if stage.status == StageStatus.RUNNING), None)
                 error = (
                     ErrorData(code=exc.code, message=exc.message)
-                    if isinstance(exc, (SourceIngestorError, HookEngineError, ReviewEngineError))
+                    if isinstance(exc, (SourceIngestorError, HookEngineError, ReviewEngineError, FinalComposerError))
                     else ErrorData(code="WORKER_ERROR", message="Xử lý công việc thất bại.")
                 )
                 if current:
@@ -329,6 +330,10 @@ class JobManager:
         readiness = getattr(self.review_engine, "readiness", None)
         return readiness() if readiness else {"status": "ready"}
 
+    def composer_readiness(self) -> dict[str, str]:
+        readiness = getattr(self.composer, "readiness", None)
+        return readiness() if readiness else {"status": "ready"}
+
     def thumbnail_path(self, job_id: str) -> Path:
         job = self.get_job(job_id)
         path = self._job_dir(job.job_id) / "source" / "thumbnail.jpg"
@@ -356,6 +361,20 @@ class JobManager:
         if path.parent != (self._job_dir(job_id) / "review").resolve() or not path.is_file():
             raise PipelineError("REVIEW_ASSET_NOT_FOUND", "Không tìm thấy dữ liệu Review của công việc.", 404)
         return path
+
+    def final_path(self, job_id: str) -> Path:
+        job = self.get_job(job_id)
+        path = (self._job_dir(job_id) / "final" / "final_video.mp4").resolve()
+        if job.status != JobStatus.COMPLETED or path.parent != (self._job_dir(job_id) / "final").resolve() or not path.is_file():
+            raise PipelineError("FINAL_ASSET_NOT_FOUND", "Không tìm thấy video cuối của công việc.", 404)
+        return path
+
+    def open_final_folder(self, job_id: str) -> None:
+        folder = self.final_path(job_id).parent
+        try:
+            os.startfile(folder)  # type: ignore[attr-defined]
+        except (AttributeError, OSError) as exc:
+            raise PipelineError("OPEN_FOLDER_FAILED", "Không thể mở thư mục video cuối.", 500) from exc
 
     def _report_review_progress(self, job_id: str, stage_id: str, progress: int, message: str) -> None:
         review_ids = ("script", "voice", "footage", "review")
@@ -430,6 +449,15 @@ class JobManager:
         hours, remainder = divmod(total, 3600)
         minutes, secs = divmod(remainder, 60)
         return f"{hours}:{minutes:02d}:{secs:02d}" if hours else f"{minutes}:{secs:02d}"
+
+    @staticmethod
+    def _format_size(size: int) -> str:
+        value = float(size)
+        for unit in ("B", "KB", "MB", "GB"):
+            if value < 1024 or unit == "GB":
+                return f"{value:.1f} {unit}" if unit != "B" else f"{int(value)} B"
+            value /= 1024
+        return f"{size} B"
     def _start_stage(self, job_id: str, index: int) -> None:
         with self._lock:
             job = self._jobs[job_id]

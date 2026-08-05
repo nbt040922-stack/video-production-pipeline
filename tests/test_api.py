@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from apps.orchestrator.adapters import StubHookEngineAdapter, StubReviewEngineAdapter, StubSourceIngestor
+from apps.orchestrator.adapters import StubFinalComposer, StubHookEngineAdapter, StubReviewEngineAdapter, StubSourceIngestor
 from apps.orchestrator.api import create_app
 from apps.orchestrator.job_manager import JobManager
 
@@ -21,6 +21,7 @@ def make_manager(path: Path, delay: float = 0.01) -> JobManager:
         source_ingestor=StubSourceIngestor(delay),
         hook_engine=StubHookEngineAdapter(delay),
         review_engine=StubReviewEngineAdapter(delay),
+        composer=StubFinalComposer(delay),
     )
 
 
@@ -93,8 +94,20 @@ def test_job_progresses_and_completes_with_output(client: TestClient, manager: J
     hook = client.get(f"/api/jobs/{job['job_id']}/assets/hook")
     assert hook.status_code == 200
     assert hook.headers["content-type"] == "video/mp4"
+    final = client.get(f"/api/jobs/{job['job_id']}/assets/final")
+    assert final.status_code == 200
+    assert final.headers["content-type"] == "video/mp4"
     assert (manager.workspace / job["job_id"] / "hook" / "metadata.json").is_file()
     assert (manager.workspace / job["job_id"] / "logs" / "pipeline.log").is_file()
+
+
+def test_open_final_folder_uses_validated_job(client: TestClient, manager: JobManager, monkeypatch: pytest.MonkeyPatch) -> None:
+    job = wait_for_terminal(client, create_job(client)["job_id"])
+    opened: list[str] = []
+    monkeypatch.setattr(manager, "open_final_folder", lambda job_id: opened.append(job_id))
+    response = client.post(f"/api/jobs/{job['job_id']}/open-folder")
+    assert response.status_code == 200
+    assert opened == [job["job_id"]]
 
 
 def test_cancellation(tmp_path: Path) -> None:

@@ -53,6 +53,7 @@ export interface OutputMetadata {
   resolution: string
   duration: string
   fileSize: string
+  previewUrl?: string
 }
 
 export interface VideoJob {

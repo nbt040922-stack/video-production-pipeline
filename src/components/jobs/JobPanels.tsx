@@ -73,7 +73,7 @@ export function FinalOutput({ output, onOpenFolder, onReset }: {
     <section className="panel final-panel" aria-labelledby="output-title">
       <div className="success-banner"><span>✓</span> Video đã hoàn tất</div>
       <div className="final-grid">
-        <VideoPreview variant="final" label="Xem trước video cuối" />
+        <VideoPreview variant="final" label="Xem trước video cuối" videoSrc={output.previewUrl} />
         <div className="final-details">
           <span className="eyebrow">VIDEO ĐẦU RA</span>
           <h2 id="output-title">{output.filename}</h2>
@@ -84,6 +84,7 @@ export function FinalOutput({ output, onOpenFolder, onReset }: {
           </dl>
           <div className="button-row">
             <button className="secondary-button" onClick={onOpenFolder}>Mở thư mục đầu ra</button>
+            {output.previewUrl && <a className="secondary-button" href={output.previewUrl} target="_blank" rel="noreferrer">Mở video</a>}
             <button className="primary-button" onClick={onReset}>Tạo video khác</button>
           </div>
         </div>

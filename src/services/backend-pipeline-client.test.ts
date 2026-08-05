@@ -47,16 +47,18 @@ describe('BackendPipelineClient', () => {
     expect(job.engines[0]).toMatchObject({ progress: 100, message: 'Hook hoàn tất', previewUrl: 'http://api/api/jobs/job-1/assets/hook' })
   })
 
-  it('sends cancellation and retry to backend', async () => {
+  it('sends cancellation, retry, and open-folder actions to backend', async () => {
     const fetchMock = vi.fn().mockResolvedValue(response(backendJob))
     vi.stubGlobal('fetch', fetchMock)
     const client = new BackendPipelineClient('http://api')
 
     await client.cancelJob('job-1')
     await client.retryJob('job-1')
+    await client.openOutputFolder('job-1')
 
     expect(fetchMock).toHaveBeenNthCalledWith(1, 'http://api/api/jobs/job-1/cancel', expect.objectContaining({ method: 'POST' }))
     expect(fetchMock).toHaveBeenNthCalledWith(2, 'http://api/api/jobs/job-1/retry', expect.objectContaining({ method: 'POST' }))
+    expect(fetchMock).toHaveBeenNthCalledWith(3, 'http://api/api/jobs/job-1/open-folder', expect.objectContaining({ method: 'POST' }))
   })
 
   it('returns structured backend errors to UI', async () => {
@@ -83,4 +85,18 @@ describe('BackendPipelineClient', () => {
       duration: '1:02',
       thumbnailUrl: 'http://api/api/jobs/job-1/assets/thumbnail',
     })
-  })})
+  })
+
+  it('maps the final preview URL', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(response({
+      ...backendJob,
+      status: 'completed',
+      output: {
+        filename: 'final_video.mp4', resolution: '1920×1080', duration: '0:48', file_size: '16.7 MB',
+        preview_url: '/api/jobs/job-1/assets/final',
+      },
+    })))
+    const job = await new BackendPipelineClient('http://api').getJob('job-1')
+    expect(job.output?.previewUrl).toBe('http://api/api/jobs/job-1/assets/final')
+  })
+})

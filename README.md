@@ -170,7 +170,7 @@ npm test
 npm run build
 ```
 
-The source stage uses yt-dlp, Pillow, FFmpeg, and ffprobe. Hook and Review wrap their engines' supported CLIs. Composer remains a deterministic local stub. See [docs/BACKEND_ARCHITECTURE.md](docs/BACKEND_ARCHITECTURE.md) and [docs/API_CONTRACT.md](docs/API_CONTRACT.md).
+The source stage uses yt-dlp, Pillow, FFmpeg, and ffprobe. Hook and Review wrap their engines' supported CLIs. Final Composer joins their validated videos locally with FFmpeg. See [docs/BACKEND_ARCHITECTURE.md](docs/BACKEND_ARCHITECTURE.md) and [docs/API_CONTRACT.md](docs/API_CONTRACT.md).
 ## Real source ingestion
 
 Install dependencies through `setup.ps1` or `setup.sh`. FFmpeg and ffprobe must be available on `PATH`, or configured through `FFMPEG_PATH` and `FFPROBE_PATH`.
@@ -205,8 +205,20 @@ See [docs/HOOK_ENGINE_ADAPTER.md](docs/HOOK_ENGINE_ADAPTER.md). Automated tests 
 
 ## Real Review Engine integration
 
-The Review adapter passes the existing `source/source.mp4` to `review_cli.py run --progress-jsonl`, maps structured engine events into the four approved Review stages, validates `review.mp4` and proxy mapping data, then exposes the real preview and savings/fallback metadata. Composer remains stubbed.
+The Review adapter passes the existing `source/source.mp4` to `review_cli.py run --progress-jsonl`, maps structured engine events into the four approved Review stages, validates `review.mp4` and proxy mapping data, then exposes the real preview and savings/fallback metadata.
 
 Configure `REVIEW_ENGINE_PATH`, `REVIEW_ENGINE_PYTHON`, `REVIEW_VOICE_REFERENCE_PATH`, `GEMINI_API_KEY`, and `TWELVE_LABS_API_KEY`. `USE_PROXY_VIDEO` defaults to `true`. OmniVoice must be installed in the Review Engine as documented there.
 
 See [docs/REVIEW_ENGINE_ADAPTER.md](docs/REVIEW_ENGINE_ADAPTER.md). Default tests never call paid services.
+
+## Real Final Composer
+
+The Final Composer validates `hook/final_hook.mp4` and `review/review.mp4`, joins them in that order with FFmpeg stream copy when compatible, and falls back to H.264/AAC 1920×1080 at 30 FPS only when needed. The job completes only after ffprobe validates `final/final_video.mp4`.
+
+Manual smoke test with an existing completed Hook/Review workspace:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\smoke_composer.py "workspace\<job_id>"
+```
+
+See [docs/FINAL_COMPOSER.md](docs/FINAL_COMPOSER.md).

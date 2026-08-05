@@ -101,6 +101,7 @@ class OutputMetadata(BaseModel):
     duration: str
     file_size: str
     relative_path: str
+    preview_url: str | None = None
 
 
 class VideoJob(BaseModel):

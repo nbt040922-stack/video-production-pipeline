@@ -9,7 +9,7 @@ from threading import Event
 import pytest
 from fastapi.testclient import TestClient
 
-from apps.orchestrator.adapters import JobCancelled, StubHookEngineAdapter, StubSourceIngestor
+from apps.orchestrator.adapters import JobCancelled, StubFinalComposer, StubHookEngineAdapter, StubSourceIngestor
 from apps.orchestrator.api import create_app
 from apps.orchestrator.job_manager import JobManager
 from apps.orchestrator.review_engine_adapter import (
@@ -291,6 +291,7 @@ def test_job_manager_receives_review_metadata_and_serves_safe_assets(tmp_path: P
         source_ingestor=StubSourceIngestor(0.001),
         hook_engine=StubHookEngineAdapter(0.001),
         review_engine=adapter,
+        composer=StubFinalComposer(0.001),
     )
     client = TestClient(create_app(manager))
     created = client.post("/api/jobs", json={"youtube_url": "https://youtu.be/demo123"}).json()

@@ -89,6 +89,8 @@ export class MockPipelineClient implements PipelineClient {
     if (job.status !== 'failed') throw new Error('Chỉ có thể thử lại công việc thất bại')
     return this.createJob({ youtubeUrl: job.sourceUrl })
   }
+
+  async openOutputFolder(): Promise<void> {}
   private advance(jobId: string): void {
     const job = this.requireJob(jobId)
     if (job.status === 'validating') {

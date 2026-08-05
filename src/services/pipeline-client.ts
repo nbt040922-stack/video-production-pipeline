@@ -6,4 +6,5 @@ export interface PipelineClient {
   getJob(jobId: string): Promise<VideoJob>
   cancelJob(jobId: string): Promise<void>
   retryJob(jobId: string): Promise<CreateJobResult>
+  openOutputFolder(jobId: string): Promise<void>
 }

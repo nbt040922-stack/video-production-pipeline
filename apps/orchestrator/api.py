@@ -48,15 +48,16 @@ def create_app(manager: JobManager | None = None) -> FastAPI:
         source_readiness = job_manager.source_readiness()
         hook_readiness = job_manager.hook_readiness()
         review_readiness = job_manager.review_readiness()
+        composer_readiness = job_manager.composer_readiness()
         return {
-            "status": "ok" if all(item["status"] != "missing_dependency" for item in (source_readiness, hook_readiness, review_readiness)) else "degraded",
-            "mode": "real_source_real_hook_real_review_stub_composer",
+            "status": "ok" if all(item["status"] != "missing_dependency" for item in (source_readiness, hook_readiness, review_readiness, composer_readiness)) else "degraded",
+            "mode": "real_pipeline",
             "workspace": str(job_manager.workspace),
             "dependencies": {
                 "source_ingestor": source_readiness,
                 "hook_engine": hook_readiness,
                 "review_engine": review_readiness,
-                "final_composer": "stub_ready",
+                "final_composer": composer_readiness,
             },
         }
 
@@ -83,6 +84,15 @@ def create_app(manager: JobManager | None = None) -> FastAPI:
     @app.get("/api/jobs/{job_id}/assets/review")
     def get_review(job_id: str) -> FileResponse:
         return FileResponse(job_manager.review_asset_path(job_id, "review.mp4"), media_type="video/mp4")
+
+    @app.get("/api/jobs/{job_id}/assets/final")
+    def get_final(job_id: str) -> FileResponse:
+        return FileResponse(job_manager.final_path(job_id), media_type="video/mp4")
+
+    @app.post("/api/jobs/{job_id}/open-folder")
+    def open_final_folder(job_id: str) -> dict[str, str]:
+        job_manager.open_final_folder(job_id)
+        return {"status": "opened"}
 
     @app.get("/api/jobs/{job_id}/assets/review-metadata")
     def get_review_metadata(job_id: str) -> FileResponse:

@@ -216,5 +216,18 @@ class StubFinalComposer:
 
     def validate(self, workspace: Path, cancel: Event, progress: ProgressCallback) -> None:
         _work("Đang kiểm tra đầu ra", self.delay, cancel, progress)
-        if not (workspace / "final" / "final_video.mp4").is_file():
+        output = workspace / "final" / "final_video.mp4"
+        if not output.is_file():
             raise RuntimeError("Final output is missing")
+        (workspace / "final" / "metadata.json").write_text(
+            json.dumps({
+                "duration_seconds": 782,
+                "width": 1920,
+                "height": 1080,
+                "file_size_bytes": output.stat().st_size,
+            }),
+            encoding="utf-8",
+        )
+
+    def readiness(self) -> dict[str, str]:
+        return {"status": "stub_ready"}

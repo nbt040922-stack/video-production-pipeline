@@ -35,6 +35,7 @@ function makeJob(status: VideoJob['status']): VideoJob {
       resolution: '1920×1080',
       duration: '10:12',
       fileSize: '220 MB',
+      previewUrl: 'http://api/api/jobs/job-1/assets/final',
     } : undefined,
   }
 }
@@ -46,6 +47,7 @@ function stubClient(job: VideoJob): PipelineClient & { createJob: ReturnType<typ
     getJob: vi.fn().mockResolvedValue(job),
     cancelJob: vi.fn().mockResolvedValue(undefined),
     retryJob: vi.fn().mockResolvedValue({ jobId: job.id }),
+    openOutputFolder: vi.fn().mockResolvedValue(undefined),
   }
 }
 
@@ -74,6 +76,10 @@ describe('App', () => {
     expect(screen.getByText('1920×1080')).toBeInTheDocument()
     expect(screen.getByText('Hook Engine')).toBeInTheDocument()
     expect(screen.getByText('Review Engine')).toBeInTheDocument()
+    expect(screen.getByLabelText('Xem trước video cuối')).toHaveAttribute('src', 'http://api/api/jobs/job-1/assets/final')
+    expect(screen.getByRole('link', { name: 'Mở video' })).toHaveAttribute('href', 'http://api/api/jobs/job-1/assets/final')
+    fireEvent.click(screen.getByRole('button', { name: 'Mở thư mục đầu ra' }))
+    await waitFor(() => expect(client.openOutputFolder).toHaveBeenCalledWith('job-1'))
   })
 
   it('retries a failed job and resets', async () => {

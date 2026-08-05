@@ -105,7 +105,9 @@ export function App({ client }: { client?: PipelineClient }) {
           {job?.output && (
             <FinalOutput
               output={job.output}
-              onOpenFolder={() => setNotice('Mở thư mục sẽ hoạt động khi đóng gói ứng dụng desktop.')}
+              onOpenFolder={() => void pipelineClient.openOutputFolder(job.id).catch((error: unknown) => {
+                setNotice(error instanceof Error ? error.message : 'Không thể mở thư mục đầu ra.')
+              })}
               onReset={handleReset}
             />
           )}
