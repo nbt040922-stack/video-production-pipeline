@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 import traceback
@@ -72,6 +73,10 @@ class JobManager:
         hook_engine: HookEngine | None = None,
         review_engine: ReviewEngine | None = None,
         composer: FinalComposer | None = None,
+        max_concurrent_jobs: int | None = None,
+        max_queued_jobs: int | None = None,
+        duplicate_window_seconds: int | None = None,
+        max_active_jobs_per_user: int | None = None,
     ) -> None:
         self.workspace = Path(workspace).resolve()
         self.workspace.mkdir(parents=True, exist_ok=True)
@@ -81,14 +86,32 @@ class JobManager:
         self._cancel_events: dict[str, Event] = {}
         self._workers: dict[str, Thread] = {}
         self.step_delay = step_delay
+        self.max_concurrent_jobs = max(1, max_concurrent_jobs or int(os.getenv("PIPELINE_MAX_CONCURRENT_JOBS", "1")))
+        self.max_queued_jobs = max(1, max_queued_jobs or int(os.getenv("PIPELINE_MAX_QUEUED_JOBS", "20")))
+        self.duplicate_window_seconds = max(0, duplicate_window_seconds if duplicate_window_seconds is not None else int(os.getenv("PIPELINE_DUPLICATE_WINDOW_SECONDS", "60")))
+        self.max_active_jobs_per_user = max(1, max_active_jobs_per_user or int(os.getenv("PIPELINE_MAX_ACTIVE_JOBS_PER_USER", "5")))
         self.source_ingestor = source_ingestor or RealSourceIngestor()
         self.hook_engine = hook_engine or HookEngineAdapter()
         self.review_engine = review_engine or ReviewEngineAdapter()
         self.composer = composer or RealFinalComposer()
         self._recover_jobs()
-
-    def create_job(self, youtube_url: str, retry_of: str | None = None, attempt: int = 1) -> VideoJob:
         with self._lock:
+            self._dispatch_locked()
+
+    def create_job(self, youtube_url: str, retry_of: str | None = None, attempt: int = 1,
+                   owner_user_id: str | None = None, owner_username: str = "legacy") -> VideoJob:
+        with self._lock:
+            active = sum(job.owner_user_id == owner_user_id and job.status not in TERMINAL_STATUSES for job in self._jobs.values())
+            if owner_user_id and active >= self.max_active_jobs_per_user:
+                raise PipelineError("USER_JOB_LIMIT_REACHED", "Bạn đã đạt giới hạn công việc đang hoạt động.", 429)
+            queued = sum(job.status == JobStatus.QUEUED and job.job_id not in self._workers for job in self._jobs.values())
+            if queued >= self.max_queued_jobs:
+                raise PipelineError("QUEUE_FULL", "Hàng đợi đã đầy. Vui lòng thử lại sau.", 429)
+            if not retry_of and self.duplicate_window_seconds:
+                cutoff = datetime.now(timezone.utc).timestamp() - self.duplicate_window_seconds
+                duplicate = next((job for job in self._jobs.values() if job.owner_user_id == owner_user_id and job.youtube_url == youtube_url and datetime.fromisoformat(job.created_at).timestamp() >= cutoff), None)
+                if duplicate:
+                    raise PipelineError("DUPLICATE_JOB", "URL này vừa được gửi. Vui lòng theo dõi công việc hiện có.", 409, {"job_id": duplicate.job_id})
             while True:
                 job_id = uuid4().hex
                 job_dir = self.workspace / job_id
@@ -104,6 +127,8 @@ class JobManager:
             job = VideoJob(
                 job_id=job_id,
                 youtube_url=youtube_url,
+                owner_user_id=owner_user_id,
+                owner_username=owner_username,
                 status=JobStatus.QUEUED,
                 stages=[JobStage(id=stage_id, name=name) for stage_id, name in STAGES],
                 created_at=utc_now(),
@@ -116,10 +141,32 @@ class JobManager:
             self._cancel_events[job_id] = Event()
             self._persist(job)
             self._log(job_id, "Job queued")
-            worker = Thread(target=self._run_job, args=(job_id,), name=f"pipeline-{job_id[:8]}", daemon=True)
-            self._workers[job_id] = worker
-            worker.start()
-            return job.model_copy(deep=True)
+            self._dispatch_locked()
+            return self._jobs[job_id].model_copy(deep=True)
+
+    def list_jobs(self, owner_user_id: str | None = None, owner_username: str | None = None,
+                  status: str | None = None, restrict_owner: bool = False) -> list[dict[str, Any]]:
+        with self._lock:
+            jobs = sorted(self._jobs.values(), key=lambda item: item.created_at, reverse=True)
+            if restrict_owner:
+                jobs = [job for job in jobs if job.owner_user_id == owner_user_id]
+            if owner_username:
+                jobs = [job for job in jobs if job.owner_username == owner_username]
+            if status:
+                jobs = [job for job in jobs if job.status.value == status]
+            return [{
+                "job_id": job.job_id,
+                "source_title": job.source.title if job.source else None,
+                "submitted_at": job.created_at,
+                "status": job.status,
+                "progress": job.progress_percentage,
+                "queue_position": job.queue_position,
+                "current_stage": job.current_stage,
+                "final_output_available": bool(job.output),
+                "error": job.error.message if job.error else None,
+                "owner_user_id": job.owner_user_id,
+                "owner_username": job.owner_username,
+            } for job in jobs]
 
     def get_job(self, job_id: str) -> VideoJob:
         self._validate_job_id(job_id)
@@ -142,6 +189,8 @@ class JobManager:
             cancel_review = job.current_stage in {"script", "voice", "footage", "review"}
             self._cancel_events[job_id].set()
             self._mark_cancelled(self._jobs[job_id])
+            self._refresh_queue_positions_locked()
+            self._dispatch_locked()
             result = self._jobs[job_id].model_copy(deep=True)
         if cancel_hook:
             self.hook_engine.cancel(job_id)
@@ -153,7 +202,8 @@ class JobManager:
         original = self.get_job(job_id)
         if original.status != JobStatus.FAILED:
             raise PipelineError("INVALID_JOB_STATE", "Chỉ có thể thử lại công việc thất bại.", 409)
-        return self.create_job(original.youtube_url, retry_of=original.job_id, attempt=original.attempt + 1)
+        return self.create_job(original.youtube_url, retry_of=original.job_id, attempt=original.attempt + 1,
+                               owner_user_id=original.owner_user_id, owner_username=original.owner_username)
 
     def wait(self, job_id: str, timeout: float = 10) -> VideoJob:
         worker = self._workers.get(job_id)
@@ -252,6 +302,10 @@ class JobManager:
                     job.hook_engine.message = error.message
                 self._persist(job)
                 self._log(job_id, f"Worker failed: {exc}\n{traceback.format_exc()}")
+        finally:
+            with self._lock:
+                self._workers.pop(job_id, None)
+                self._dispatch_locked()
 
     def _run_non_source_stage(
         self, job_id: str, stage_id: str, cancel: Event, progress: Any
@@ -555,6 +609,8 @@ class JobManager:
                 continue
             self._jobs[job_id] = job
             self._cancel_events[job_id] = Event()
+            if job.status == JobStatus.QUEUED:
+                continue
             if job.status not in TERMINAL_STATUSES:
                 job.status = JobStatus.FAILED
                 job.finished_at = utc_now()
@@ -566,6 +622,38 @@ class JobManager:
                         stage.finished_at = utc_now()
                 self._persist(job)
                 self._log(job_id, "Recovered interrupted job as failed")
+
+    def _dispatch_locked(self) -> None:
+        self._refresh_queue_positions_locked()
+        while len(self._workers) < self.max_concurrent_jobs:
+            job = next((item for item in sorted(self._jobs.values(), key=lambda value: value.created_at) if item.status == JobStatus.QUEUED), None)
+            if not job:
+                break
+            job.queue_position = None
+            self._persist(job)
+            worker = Thread(target=self._run_job, args=(job.job_id,), name=f"pipeline-{job.job_id[:8]}", daemon=True)
+            self._workers[job.job_id] = worker
+            self._log(job.job_id, "Job dispatched")
+            worker.start()
+        self._refresh_queue_positions_locked()
+
+    def _refresh_queue_positions_locked(self) -> None:
+        queued = sorted((job for job in self._jobs.values() if job.status == JobStatus.QUEUED and job.job_id not in self._workers), key=lambda item: item.created_at)
+        positions = {job.job_id: index for index, job in enumerate(queued, 1)}
+        for job in self._jobs.values():
+            position = positions.get(job.job_id)
+            if job.queue_position != position:
+                job.queue_position = position
+                self._persist(job)
+
+    def queue_readiness(self) -> dict[str, int | str]:
+        with self._lock:
+            return {
+                "status": "ready",
+                "running": len(self._workers),
+                "queued": sum(job.status == JobStatus.QUEUED and job.job_id not in self._workers for job in self._jobs.values()),
+                "max_concurrent": self.max_concurrent_jobs,
+            }
 
     def _persist(self, job: VideoJob) -> None:
         metadata = self._job_dir(job.job_id) / "metadata" / "job.json"
@@ -587,6 +675,7 @@ class JobManager:
         log_path = self._job_dir(job_id) / "logs" / "pipeline.log"
         with log_path.open("a", encoding="utf-8") as log:
             log.write(f"{utc_now()} {message}\n")
+        logging.getLogger("pipeline.worker").info("job_id=%s %s", job_id, message.replace("\n", " "))
 
     def _job_dir(self, job_id: str) -> Path:
         self._validate_job_id(job_id)

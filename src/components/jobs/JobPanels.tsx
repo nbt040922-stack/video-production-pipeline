@@ -64,9 +64,8 @@ export function EngineCards({ engines }: { engines: EngineStatus[] }) {
   )
 }
 
-export function FinalOutput({ output, onOpenFolder, onReset }: {
+export function FinalOutput({ output, onReset }: {
   output: OutputMetadata
-  onOpenFolder: () => void
   onReset: () => void
 }) {
   return (
@@ -83,7 +82,7 @@ export function FinalOutput({ output, onOpenFolder, onReset }: {
             <div><dt>Dung lượng</dt><dd>{output.fileSize}</dd></div>
           </dl>
           <div className="button-row">
-            <button className="secondary-button" onClick={onOpenFolder}>Mở thư mục đầu ra</button>
+            {output.downloadUrl && <a className="secondary-button" href={output.downloadUrl}>Tải video cuối</a>}
             {output.previewUrl && <a className="secondary-button" href={output.previewUrl} target="_blank" rel="noreferrer">Mở video</a>}
             <button className="primary-button" onClick={onReset}>Tạo video khác</button>
           </div>

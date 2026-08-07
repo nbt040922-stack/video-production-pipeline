@@ -1,78 +1,55 @@
-# Backend Architecture
+# Kiến trúc backend
 
-## Stack
+## Công nghệ
 
-The local backend uses Python 3.11+, FastAPI, Pydantic, and Uvicorn. Jobs run in daemon threads inside one backend process. An `RLock` protects shared state; no database or external queue is used.
+Backend dùng Python 3.11+, FastAPI, Pydantic và Uvicorn. Job chạy trong daemon thread của một backend process. `RLock` bảo vệ state chung; không dùng database hoặc queue ngoài.
 
-## Request flow
+## Luồng request
 
 ```text
 React UI
   -> BackendPipelineClient
   -> FastAPI job API
-  -> JobManager
-  -> real source ingestor + real Hook adapter + real Review adapter + FFmpeg Final Composer
-  -> isolated workspace + atomic job.json + pipeline.log
+  -> JobManager FIFO
+  -> Source + Hook adapter + Review adapter + FinalComposer
+  -> workspace riêng + job.json nguyên tử + pipeline.log
 ```
 
-## Job state machine
+## Trạng thái job
 
 ```text
 queued -> validating -> downloading -> processing
        -> composing -> validating_output -> completed
 
-Any active state -> cancelled
-Any worker error -> failed
-failed -> retry creates a new queued job
+Trạng thái đang chạy -> cancelled
+Worker lỗi -> failed
+failed -> Retry tạo job queued mới
 ```
 
-Retry never mutates the failed job. It creates a new job with a new `job_id`, increments `attempt`, and records `retry_of`. The controlled `fixture=fail` fails only the first attempt so retry can exercise a successful recovery.
+Retry không sửa job cũ. Job mới có `job_id` mới, tăng `attempt` và ghi `retry_of`.
 
-## Stage model
+## Stage
 
-Every job contains nine ordered stages. Each stage stores status, integer progress, timestamps, elapsed seconds, user-safe message, and structured error data. Stage statuses are `pending`, `running`, `completed`, `failed`, `skipped`, and `cancelled`.
+Mỗi job có chín stage theo thứ tự. Mỗi stage lưu trạng thái, tiến độ số nguyên, timestamp, thời gian chạy, thông báo an toàn cho người dùng và lỗi có cấu trúc. Trạng thái stage: `pending`, `running`, `completed`, `failed`, `skipped`, `cancelled`.
 
-## Workspace
+## Workspace và lưu trạng thái
 
-```text
-workspace/<job_id>/
-├── source/
-├── hook/
-├── review/
-├── final/
-├── metadata/job.json
-└── logs/pipeline.log
-```
+Job ID là UUID hex thường dài 32 ký tự. Tạo thư mục từ chối trùng. Metadata được ghi vào `job.json.tmp`, sau đó replace nguyên tử sang `job.json`. Artifact được giữ khi failed hoặc cancelled. `workspace/` bị Git ignore.
 
-Job IDs are 32 lowercase hexadecimal UUID values. Directory creation rejects collisions. Metadata is written to `job.json.tmp` and atomically replaced. Artifacts remain after failure or cancellation. Runtime workspace content is ignored by Git.
+## Hủy
 
-## Cancellation
+Mỗi job đang chạy có `threading.Event`. Hủy sẽ set event, đánh dấu stage chưa xong là cancelled, lưu metadata và trả response. Source và Composer kiểm tra event. Hook dừng process tree đang hoạt động. Review gửi tín hiệu cho CLI cleanup trước, chỉ force-kill sau thời gian chờ.
 
-Each active job owns a `threading.Event`. Cancellation sets the event, marks unfinished stages cancelled, persists metadata, and returns immediately. Source and Composer adapters check the event during work. Hook terminates its active process tree. Review first signals its headless CLI so engine cleanup can run, then force-terminates only after a grace period.
+## Khôi phục khi khởi động
 
-## Startup recovery
+`JobManager` nạp job đã lưu. Job `queued` được đưa lại vào FIFO. Job trả phí đang chạy dở chuyển thành `failed` với mã `INTERRUPTED`, không tự chạy lại. Metadata hỏng được giữ nguyên và trả `CORRUPTED_JOB_METADATA`.
 
-`JobManager` loads persisted jobs at startup. Jobs found in non-terminal states become `failed` with error code `INTERRUPTED`. Corrupted metadata remains untouched and returns a structured `CORRUPTED_JOB_METADATA` error.
+## Adapter pipeline
 
-## Pipeline adapters
+Source dùng yt-dlp, Pillow, FFmpeg và ffprobe. `HookEngineAdapter` bọc Hook CLI `generate` rồi `phase4`. `ReviewEngineAdapter` bọc `review_cli.py run --progress-jsonl`. `FinalComposer` dùng FFmpeg concat, fallback re-encode chuẩn hóa rồi kiểm tra bằng ffprobe. Hai submodule không bị sửa.
 
-The backend defines adapter boundaries for Source, Hook, Review, and Composer. Source ingestion uses yt-dlp, Pillow, FFmpeg, and ffprobe. `HookEngineAdapter` wraps the black-box Hook CLI (`generate`, then `phase4`). `ReviewEngineAdapter` wraps `review_cli.py run --progress-jsonl`, consumes structured progress, and validates media/proxy artifacts. `FinalComposer` uses FFmpeg concat with a normalized re-encode fallback and validates the finished media with ffprobe.
+## Frontend và CORS
 
-Engine submodules remain untouched and hidden behind adapter boundaries.
+Production luôn dùng `BackendPipelineClient` với request `/api` cùng origin. Development mặc định dùng mock; đặt `VITE_PIPELINE_MODE=backend` và tùy chọn `VITE_API_BASE_URL=http://127.0.0.1:8000` để dùng backend thật.
 
-## Frontend mode
-
-Mock mode remains default:
-
-```text
-VITE_PIPELINE_MODE=mock
-```
-
-Backend mode:
-
-```text
-VITE_PIPELINE_MODE=backend
-VITE_API_BASE_URL=http://127.0.0.1:8000
-```
-
-Only `http://127.0.0.1:5173` is allowed by default through CORS. Override `FRONTEND_ORIGIN` when intentionally using another local origin.
+Production không bật CORS. Development giới hạn CORS trong `PIPELINE_DEV_CORS_ORIGINS`, mặc định là các origin Vite localhost.

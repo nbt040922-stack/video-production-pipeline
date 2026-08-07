@@ -211,15 +211,7 @@ class ReviewEngineAdapter:
         ]
         if self.config.use_proxy_video:
             command.append("--use-proxy-video")
-        environment = os.environ.copy()
-        environment.update(
-            GEMINI_API_KEY=self.config.gemini_api_key,
-            TWELVE_LABS_API_KEY=self.config.twelve_labs_api_key,
-            FFMPEG_PATH=self.config.ffmpeg_path,
-            FFPROBE_PATH=self.config.ffprobe_path,
-            PYTHONIOENCODING="utf-8",
-            PYTHONUTF8="1",
-        )
+        environment = self._engine_environment()
         last_error: dict[str, Any] | None = None
         result_event: dict[str, Any] | None = None
         started = monotonic()
@@ -465,13 +457,7 @@ class ReviewEngineAdapter:
             raise ReviewEngineError("REVIEW_OUTPUT_INVALID", "Thông tin video review không hợp lệ.", str(exc)) from exc
 
     def _doctor(self, request: ReviewEngineInput, review: Path) -> None:
-        environment = os.environ.copy()
-        environment.update(
-            GEMINI_API_KEY=self.config.gemini_api_key,
-            TWELVE_LABS_API_KEY=self.config.twelve_labs_api_key,
-            PYTHONIOENCODING="utf-8",
-            PYTHONUTF8="1",
-        )
+        environment = self._engine_environment()
         ffprobe = Path(self.config.ffprobe_path)
         if ffprobe.is_file():
             environment["PATH"] = f"{ffprobe.resolve().parent}{os.pathsep}{environment.get('PATH', '')}"
@@ -528,6 +514,22 @@ class ReviewEngineAdapter:
     def _tool(command: str) -> str | None:
         path = Path(command)
         return str(path.resolve()) if path.is_file() else shutil.which(command)
+
+    def _engine_environment(self) -> dict[str, str]:
+        environment = os.environ.copy()
+        environment.update(
+            GEMINI_API_KEY=self.config.gemini_api_key,
+            TWELVE_LABS_API_KEY=self.config.twelve_labs_api_key,
+            FFMPEG_PATH=self.config.ffmpeg_path,
+            FFPROBE_PATH=self.config.ffprobe_path,
+            PYTHONIOENCODING="utf-8",
+            PYTHONUTF8="1",
+        )
+        provider = environment.get("REVIEW_LLM_PROVIDER", "openai").strip().lower()
+        openai_ready = bool(environment.get("OPENAI_API_KEY") and environment.get("REVIEW_LLM_MODEL"))
+        if provider == "openai" and not openai_ready and self.config.gemini_api_key:
+            environment["REVIEW_LLM_PROVIDER"] = "gemini"
+        return environment
 
     @staticmethod
     def _signal_process(process: subprocess.Popen[str]) -> None:

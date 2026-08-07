@@ -54,6 +54,7 @@ export interface OutputMetadata {
   duration: string
   fileSize: string
   previewUrl?: string
+  downloadUrl?: string
 }
 
 export interface VideoJob {
@@ -66,4 +67,33 @@ export interface VideoJob {
   engines: EngineStatus[]
   output?: OutputMetadata
   error?: string
+  queuePosition?: number
+}
+
+export interface SharedJobSummary {
+  jobId: string
+  sourceTitle?: string
+  submittedAt: string
+  status: string
+  progress: number
+  queuePosition?: number
+  currentStage?: string
+  finalOutputAvailable: boolean
+  downloadUrl?: string
+  error?: string
+  ownerUsername?: string
+}
+
+export interface CurrentUser {
+  id: string
+  username: string
+  displayName: string
+  role: 'user' | 'admin'
+}
+
+export interface Readiness {
+  status: 'ready' | 'degraded'
+  checks: Record<string, boolean>
+  freeDiskGb: number
+  minimumFreeDiskGb: number
 }

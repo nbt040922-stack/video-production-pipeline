@@ -36,6 +36,7 @@ function makeJob(status: VideoJob['status']): VideoJob {
       duration: '10:12',
       fileSize: '220 MB',
       previewUrl: 'http://api/api/jobs/job-1/assets/final',
+      downloadUrl: 'http://api/api/jobs/job-1/assets/final/download',
     } : undefined,
   }
 }
@@ -47,23 +48,28 @@ function stubClient(job: VideoJob): PipelineClient & { createJob: ReturnType<typ
     getJob: vi.fn().mockResolvedValue(job),
     cancelJob: vi.fn().mockResolvedValue(undefined),
     retryJob: vi.fn().mockResolvedValue({ jobId: job.id }),
-    openOutputFolder: vi.fn().mockResolvedValue(undefined),
+    listJobs: vi.fn().mockResolvedValue([]),
+    login: vi.fn().mockResolvedValue({ id: 'u1', username: 'tester', displayName: 'Tester', role: 'user' }),
+    logout: vi.fn().mockResolvedValue(undefined),
+    changePassword: vi.fn().mockResolvedValue(undefined),
+    getCurrentUser: vi.fn().mockResolvedValue({ id: 'u1', username: 'tester', displayName: 'Tester', role: 'user' }),
+    getReadiness: vi.fn().mockResolvedValue({ status: 'ready', checks: {}, freeDiskGb: 100, minimumFreeDiskGb: 30 }),
   }
 }
 
 async function start(client: PipelineClient) {
   render(<App client={client} />)
-  fireEvent.change(screen.getByLabelText('Liên kết YouTube'), { target: { value: 'https://youtu.be/demo' } })
+  fireEvent.change(await screen.findByLabelText('Liên kết YouTube'), { target: { value: 'https://youtu.be/demo' } })
   fireEvent.click(screen.getByRole('button', { name: 'Tạo video' }))
 }
 
 describe('App', () => {
-  it('shows initial idle state and validates bad URLs', () => {
+  it('shows initial idle state and validates bad URLs', async () => {
     render(<App client={stubClient(makeJob('completed'))} />)
-    expect(screen.getByRole('heading', { name: 'Tạo Bodycam Review' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Tạo Bodycam Review' })).toBeInTheDocument()
     expect(screen.queryByText('Quy trình sản xuất')).not.toBeInTheDocument()
 
-    fireEvent.change(screen.getByLabelText('Liên kết YouTube'), { target: { value: 'not-a-url' } })
+    fireEvent.change(await screen.findByLabelText('Liên kết YouTube'), { target: { value: 'not-a-url' } })
     expect(screen.getByText(/URL không hợp lệ/)).toBeInTheDocument()
   })
 
@@ -78,8 +84,7 @@ describe('App', () => {
     expect(screen.getByText('Review Engine')).toBeInTheDocument()
     expect(screen.getByLabelText('Xem trước video cuối')).toHaveAttribute('src', 'http://api/api/jobs/job-1/assets/final')
     expect(screen.getByRole('link', { name: 'Mở video' })).toHaveAttribute('href', 'http://api/api/jobs/job-1/assets/final')
-    fireEvent.click(screen.getByRole('button', { name: 'Mở thư mục đầu ra' }))
-    await waitFor(() => expect(client.openOutputFolder).toHaveBeenCalledWith('job-1'))
+    expect(screen.getAllByRole('link').length).toBeGreaterThan(0)
   })
 
   it('retries a failed job and resets', async () => {
@@ -99,4 +104,70 @@ describe('App', () => {
     await start(client)
 
     expect(await screen.findByRole('alert')).toHaveTextContent('Không thể kết nối backend local.')
-  })})
+  })
+
+  it('shows login and authenticates with a user account', async () => {
+    const client = stubClient(makeJob('completed'))
+    vi.mocked(client.getCurrentUser).mockResolvedValue(null)
+    render(<App client={client} />)
+    fireEvent.change(await screen.findByLabelText(/T.n ..ng nh.p/), { target: { value: 'tester' } })
+    const password = await screen.findByLabelText(/^M.t kh.u$/)
+    fireEvent.change(password, { target: { value: 'internal-pass' } })
+    fireEvent.click(screen.getByRole('button', { name: /..ng nh.p/ }))
+    await waitFor(() => expect(client.login).toHaveBeenCalledWith('tester', 'internal-pass'))
+    expect(await screen.findByRole('heading', { name: /T.o Bodycam Review/ })).toBeInTheDocument()
+  })
+
+  it('shows shared queue position and final download', async () => {
+    const client = stubClient(makeJob('completed'))
+    vi.mocked(client.getCurrentUser).mockResolvedValue({ id: 'admin', username: 'admin', displayName: 'Quản trị', role: 'admin' })
+    vi.mocked(client.listJobs).mockResolvedValue([{
+      jobId: 'job-2', sourceTitle: 'Shared LAN job', submittedAt: '2026-08-05T00:00:00Z',
+      status: 'queued', progress: 0, queuePosition: 2, finalOutputAvailable: true,
+      downloadUrl: '/api/jobs/job-2/assets/final/download',
+      ownerUsername: 'alice',
+    }])
+    render(<App client={client} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Tất cả công việc' }))
+    expect(await screen.findByText('Shared LAN job')).toBeInTheDocument()
+    expect(screen.getByText(/#2/)).toBeInTheDocument()
+    expect(screen.getByText('alice')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /T.i video/ })).toHaveAttribute('href', '/api/jobs/job-2/assets/final/download')
+  })
+
+  it('shows server unavailable state', async () => {
+    const client = stubClient(makeJob('completed'))
+    vi.mocked(client.getCurrentUser).mockRejectedValue(new Error('offline'))
+    render(<App client={client} />)
+    expect(await screen.findByRole('heading', { name: /M.y ch. ch.a s.n s.ng/ })).toBeInTheDocument()
+  })
+
+  it('logs out to the login screen', async () => {
+    const client = stubClient(makeJob('completed'))
+    render(<App client={client} />)
+    fireEvent.click(await screen.findByRole('button', { name: /..ng xu.t/ }))
+    await waitFor(() => expect(client.logout).toHaveBeenCalled())
+    expect(await screen.findByLabelText(/^M.t kh.u$/)).toBeInTheDocument()
+  })
+
+  it('returns to login when the session expires', async () => {
+    const client = stubClient(makeJob('completed'))
+    vi.mocked(client.listJobs).mockRejectedValue(Object.assign(new Error('Cần đăng nhập.'), { name: 'AuthenticationRequiredError' }))
+    render(<App client={client} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Công việc của tôi' }))
+    expect(await screen.findByLabelText(/^M.t kh.u$/)).toBeInTheDocument()
+  })
+
+  it('changes password from settings', async () => {
+    const client = stubClient(makeJob('completed'))
+    render(<App client={client} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Cài đặt' }))
+    fireEvent.change(screen.getByLabelText('Mật khẩu hiện tại'), { target: { value: 'Matkhau-cu@16' } })
+    fireEvent.change(screen.getByLabelText('Mật khẩu mới'), { target: { value: 'Matkhau-moi@16' } })
+    fireEvent.change(screen.getByLabelText('Nhập lại mật khẩu mới'), { target: { value: 'Matkhau-moi@16' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Đổi mật khẩu' }))
+    await waitFor(() => expect(client.changePassword).toHaveBeenCalledWith('Matkhau-cu@16', 'Matkhau-moi@16'))
+    expect(await screen.findByText('Đổi mật khẩu thành công.')).toBeInTheDocument()
+  })
+
+})

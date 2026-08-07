@@ -1,58 +1,56 @@
-# Final Composer
+# Bộ ghép video cuối
 
-`FinalComposer` is the last local backend stage. It reads only the completed upstream artifacts and never modifies them:
+`FinalComposer` là stage backend cuối. Nó chỉ đọc artifact đã hoàn tất, không sửa input:
 
 ```text
 hook/final_hook.mp4
           +
 review/review.mp4
-          ↓
+          |
+          v
 FFmpeg FinalComposer
-          ↓
+          |
+          v
 final/final_video.mp4
 ```
 
-## Strategy
+## Chiến lược
 
-Both inputs are validated with ffprobe before composition. When video codec, audio codec, resolution, and frame rate match, FFmpeg concat demuxer joins Hook first and Review second with stream copy. This preserves quality and avoids a second encode.
+ffprobe kiểm tra cả hai input trước khi ghép. Nếu video codec, audio codec, resolution và frame rate giống nhau, FFmpeg concat demuxer ghép Hook trước, Review sau bằng stream copy; giữ chất lượng và tránh encode lần hai.
 
-When those properties differ, or stream-copy concat produces an invalid file, Composer retries once with H.264/AAC, 1920×1080, 30 FPS, stereo 48 kHz output. Video is scaled and padded without changing aspect ratio. Final duration must be within 3% or one second of the sum of both inputs.
+Nếu thông số khác nhau hoặc stream-copy tạo file lỗi, Composer retry một lần bằng H.264/AAC, 1920×1080, 30 FPS, stereo 48 kHz. Video được scale và pad, không đổi tỷ lệ khung hình. Thời lượng final phải nằm trong sai số 3% hoặc một giây so với tổng hai input.
 
-## Workspace contract
+## Output
 
 ```text
 workspace/<job_id>/final/
-├── final_video.mp4
-├── metadata.json
-├── compose_report.json
-├── composer.log
-└── ffmpeg-progress.log
+|-- final_video.mp4
+|-- metadata.json
+|-- compose_report.json
+|-- composer.log
+`-- ffmpeg-progress.log
 ```
 
-`metadata.json` contains the validated duration, resolution, frame rate, codecs, size, relative path, and selected strategy. `compose_report.json` records input probes, concat attempts, fallback reason, and output probe. Logs remain available after failure or cancellation. Temporary rendering and concat-list files are removed after success.
+`metadata.json` lưu thời lượng, resolution, frame rate, codec, kích thước, đường dẫn tương đối và chiến lược đã dùng. `compose_report.json` ghi probe input, lần concat, lý do fallback và probe output. Log được giữ sau failed/cancelled; file render và concat-list tạm bị xóa sau thành công.
 
-## Progress and cancellation
+## Tiến độ và hủy
 
-FFmpeg writes machine-readable render time to `ffmpeg-progress.log`; the existing Compose card receives progress calculated from the combined input duration. Cancellation terminates the active FFmpeg process and leaves Hook, Review, and diagnostic logs untouched. The job becomes complete only after the Validate stage accepts the final file.
+FFmpeg ghi thời gian render máy đọc được vào `ffmpeg-progress.log`; Compose card tính tiến độ từ tổng thời lượng input. Hủy sẽ dừng FFmpeg đang chạy, không đụng Hook, Review và log chẩn đoán. Job chỉ completed sau khi Validate chấp nhận final file.
 
-## Configuration
+## Cấu hình
 
-| Variable | Default | Meaning |
+| Biến | Mặc định | Ý nghĩa |
 |---|---|---|
-| `FFMPEG_PATH` | `ffmpeg` | FFmpeg command or absolute executable path |
-| `FFPROBE_PATH` | `ffprobe` | ffprobe command or absolute executable path |
-| `FINAL_COMPOSER_TIMEOUT_SECONDS` | `3600` | Maximum duration of one FFmpeg attempt |
+| `FFMPEG_PATH` | `ffmpeg` | Lệnh hoặc đường dẫn FFmpeg |
+| `FFPROBE_PATH` | `ffprobe` | Lệnh hoặc đường dẫn ffprobe |
+| `FINAL_COMPOSER_TIMEOUT_SECONDS` | `3600` | Timeout mỗi lần FFmpeg |
 
-## Errors
+Mã lỗi: `MISSING_HOOK`, `MISSING_REVIEW`, `FFMPEG_MISSING`, `FFPROBE_MISSING`, `CONCAT_FAILURE`, `CODEC_MISMATCH`, `INVALID_OUTPUT`, `DISK_FULL`, `COMPOSER_TIMEOUT`; hủy pipeline dùng `JOB_CANCELLED`.
 
-Composer exposes structured codes including `MISSING_HOOK`, `MISSING_REVIEW`, `FFMPEG_MISSING`, `FFPROBE_MISSING`, `CONCAT_FAILURE`, `CODEC_MISMATCH`, `INVALID_OUTPUT`, `DISK_FULL`, and `COMPOSER_TIMEOUT`. `JOB_CANCELLED` remains the pipeline-level cancellation code.
-
-## Manual smoke test
-
-Use a completed workspace that already contains real Hook and Review videos:
+## Smoke test
 
 ```powershell
 .\.venv\Scripts\python.exe scripts\smoke_composer.py "workspace\<job_id>"
 ```
 
-Then open `workspace/<job_id>/final/final_video.mp4` or use the final preview in the frontend.
+Sau đó mở `workspace/<job_id>/final/final_video.mp4` hoặc xem preview final trên frontend.

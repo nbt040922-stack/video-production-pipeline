@@ -4,22 +4,26 @@ export type Page = 'new' | 'jobs' | 'outputs' | 'settings'
 
 const navItems: { id: Page; label: string; icon: string }[] = [
   { id: 'new', label: 'Video mới', icon: '+' },
-  { id: 'jobs', label: 'Công việc', icon: '≡' },
+  { id: 'jobs', label: 'Công việc', icon: '□' },
   { id: 'outputs', label: 'Đầu ra', icon: '□' },
-  { id: 'settings', label: 'Cài đặt', icon: '⚙' },
+  { id: 'settings', label: 'Cài đặt', icon: '□' },
 ]
 
 const pageTitles: Record<Page, string> = {
   new: 'Tạo video',
   jobs: 'Công việc',
-  outputs: 'Video đầu ra',
+  outputs: 'Video Đầu ra',
   settings: 'Cài đặt',
 }
 
-export function AppShell({ page, onPageChange, busy, children }: {
+export function AppShell({ page, onPageChange, busy, degraded, onLogout, userName, isAdmin, children }: {
   page: Page
   onPageChange: (page: Page) => void
   busy: boolean
+  degraded: boolean
+  onLogout: () => void
+  userName: string
+  isAdmin: boolean
   children: ReactNode
 }) {
   return (
@@ -29,17 +33,17 @@ export function AppShell({ page, onPageChange, busy, children }: {
         <nav>
           {navItems.map((item) => (
             <button
-              className={`nav-item ${page === item.id ? 'active' : ''}`}
+              className={'nav-item ' + (page === item.id ? 'active' : '')}
               key={item.id}
               onClick={() => onPageChange(item.id)}
               aria-current={page === item.id ? 'page' : undefined}
             >
               <span className="nav-icon" aria-hidden="true">{item.icon}</span>
-              <span>{item.label}</span>
+              <span>{item.id === 'jobs' ? (isAdmin ? 'Tất cả công việc' : 'Công việc của tôi') : item.label}</span>
             </button>
           ))}
         </nav>
-        <div className="sidebar-version">v0.1 mock</div>
+        <div className="sidebar-version">v0.2 LAN</div>
       </aside>
 
       <div className="app-frame">
@@ -49,11 +53,12 @@ export function AppShell({ page, onPageChange, busy, children }: {
             <h1>{pageTitles[page]}</h1>
           </div>
           <div className="topbar-actions">
-            <div className={`system-status ${busy ? 'busy' : ''}`} role="status">
+            <span className="current-user">{userName}{isAdmin ? ' · Admin' : ''}</span>
+            <div className={'system-status ' + (busy || degraded ? 'busy' : '')} role="status">
               <span className="status-dot" />
-              {busy ? 'Đang xử lý' : 'Hệ thống sẵn sàng'}
+              {degraded ? 'Hệ thống chưa sẵn sàng' : busy ? 'Đang xử lý' : 'Hệ thống sẵn sàng'}
             </div>
-            <button className="icon-button" aria-label="Mở cài đặt" onClick={() => onPageChange('settings')}>⚙</button>
+            <button className="ghost-button" onClick={onLogout}>Đăng xuất</button>
           </div>
         </header>
         <main>{children}</main>

@@ -36,6 +36,9 @@ tmp/
 temp/
 *.tmp
 *.log
+logs/
+data/*
+!data/.gitkeep
 
 # Generated media and FFmpeg artifacts
 *.mp4

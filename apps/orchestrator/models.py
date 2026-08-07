@@ -107,6 +107,8 @@ class OutputMetadata(BaseModel):
 class VideoJob(BaseModel):
     job_id: str
     youtube_url: str
+    owner_user_id: str | None = None
+    owner_username: str = "legacy"
     status: JobStatus
     progress_percentage: int = 0
     current_stage: str | None = None
@@ -122,6 +124,7 @@ class VideoJob(BaseModel):
     output: OutputMetadata | None = None
     attempt: int = 1
     retry_of: str | None = None
+    queue_position: int | None = None
 
 
 class CreateJobRequest(BaseModel):

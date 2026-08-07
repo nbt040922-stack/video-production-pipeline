@@ -47,23 +47,39 @@ describe('BackendPipelineClient', () => {
     expect(job.engines[0]).toMatchObject({ progress: 100, message: 'Hook hoàn tất', previewUrl: 'http://api/api/jobs/job-1/assets/hook' })
   })
 
-  it('sends cancellation, retry, and open-folder actions to backend', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(response(backendJob))
+  it('sends cancellation, retry, login, and logout with cookies', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(response(backendJob))
+      .mockResolvedValueOnce(response(backendJob))
+      .mockResolvedValueOnce(response({ user: { id: 'u1', username: 'tester', display_name: 'Tester', role: 'user' } }))
+      .mockResolvedValueOnce(response({ authenticated: false }))
     vi.stubGlobal('fetch', fetchMock)
     const client = new BackendPipelineClient('http://api')
 
     await client.cancelJob('job-1')
     await client.retryJob('job-1')
-    await client.openOutputFolder('job-1')
+    await client.login('tester', 'secret')
+    await client.logout()
 
-    expect(fetchMock).toHaveBeenNthCalledWith(1, 'http://api/api/jobs/job-1/cancel', expect.objectContaining({ method: 'POST' }))
+    expect(fetchMock).toHaveBeenNthCalledWith(1, 'http://api/api/jobs/job-1/cancel', expect.objectContaining({ method: 'POST', credentials: 'include' }))
     expect(fetchMock).toHaveBeenNthCalledWith(2, 'http://api/api/jobs/job-1/retry', expect.objectContaining({ method: 'POST' }))
-    expect(fetchMock).toHaveBeenNthCalledWith(3, 'http://api/api/jobs/job-1/open-folder', expect.objectContaining({ method: 'POST' }))
+    expect(fetchMock).toHaveBeenNthCalledWith(3, 'http://api/api/auth/login', expect.objectContaining({ method: 'POST' }))
+    expect(fetchMock).toHaveBeenNthCalledWith(4, 'http://api/api/auth/logout', expect.objectContaining({ method: 'POST' }))
   })
 
   it('returns structured backend errors to UI', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(response({ error: { message: 'Xử lý thất bại' } }, false)))
     await expect(new BackendPipelineClient('http://api').getJob('job-1')).rejects.toThrow('Xử lý thất bại')
+  })
+
+  it('changes the current user password', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(response({ user: {} }))
+    vi.stubGlobal('fetch', fetchMock)
+    await new BackendPipelineClient('http://api').changePassword('old-password', 'new-password')
+    expect(fetchMock).toHaveBeenCalledWith('http://api/api/auth/change-password', expect.objectContaining({
+      method: 'POST', credentials: 'include',
+      body: JSON.stringify({ current_password: 'old-password', new_password: 'new-password' }),
+    }))
   })
 
   it('maps real source metadata and thumbnail URL', async () => {

@@ -4,6 +4,8 @@ import type {
   CreateVideoInput,
   EngineState,
   JobStage,
+  Readiness,
+  SharedJobSummary,
   SourceMetadata,
   VideoJob,
 } from '../types/job'
@@ -71,6 +73,19 @@ export class MockPipelineClient implements PipelineClient {
     return structuredClone(job)
   }
 
+  async listJobs(): Promise<SharedJobSummary[]> {
+    return [...this.jobs.values()].map((job) => ({
+      jobId: job.id,
+      sourceTitle: job.source.title,
+      submittedAt: new Date().toISOString(),
+      status: job.status,
+      progress: Math.round(job.stages.filter((stage) => stage.status === 'completed').length / job.stages.length * 100),
+      finalOutputAvailable: Boolean(job.output),
+      downloadUrl: job.output?.downloadUrl,
+      error: job.error,
+    }))
+  }
+
   async cancelJob(jobId: string): Promise<void> {
     const job = this.requireJob(jobId)
     this.stop(jobId)
@@ -90,7 +105,13 @@ export class MockPipelineClient implements PipelineClient {
     return this.createJob({ youtubeUrl: job.sourceUrl })
   }
 
-  async openOutputFolder(): Promise<void> {}
+  async login() { return { id: 'demo', username: 'demo', displayName: 'Demo', role: 'admin' as const } }
+  async logout(): Promise<void> {}
+  async changePassword(): Promise<void> {}
+  async getCurrentUser() { return { id: 'demo', username: 'demo', displayName: 'Demo', role: 'admin' as const } }
+  async getReadiness(): Promise<Readiness> {
+    return { status: 'ready', checks: {}, freeDiskGb: 100, minimumFreeDiskGb: 30 }
+  }
   private advance(jobId: string): void {
     const job = this.requireJob(jobId)
     if (job.status === 'validating') {

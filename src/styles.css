@@ -167,6 +167,11 @@ dd { margin: 0; color: #d9dae0; font-size: 11px; font-weight: 650; }
 .placeholder-icon { width: 48px; height: 48px; display: grid; place-items: center; border-radius: 12px; background: #211d33; color: #aa98ff; font-size: 23px; }
 .placeholder-panel h2 { margin: 16px 0 5px; font-size: 18px; }
 .placeholder-panel p { margin: 0; color: var(--muted); font-size: 12px; }
+.password-settings { width: min(520px, 100%); display: grid; gap: 12px; padding: 24px; }
+.password-settings h2, .password-settings p { margin: 0 0 6px; }
+.password-settings p { color: var(--muted); font-size: 12px; }
+.password-settings input { width: 100%; padding: 13px 14px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-muted); color: var(--text); }
+.password-settings button { justify-self: start; margin-top: 6px; }
 
 @keyframes spin { to { transform: rotate(360deg); } }
 @keyframes pulse { 50% { opacity: .45; } }
@@ -184,4 +189,72 @@ dd { margin: 0; color: #d9dae0; font-size: 11px; font-weight: 650; }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+}
+
+
+.login-page {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: var(--background);
+}
+
+.login-card {
+  width: min(420px, 100%);
+  display: grid;
+  gap: 16px;
+}
+
+.login-card .brand-mark {
+  margin-bottom: 8px;
+}
+
+.login-card input {
+  width: 100%;
+  padding: 13px 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-muted);
+  color: var(--text);
+}
+
+.shared-jobs {
+  display: grid;
+  gap: 18px;
+}
+
+.jobs-list {
+  display: grid;
+  gap: 10px;
+}
+
+.shared-job-row {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) 150px 70px auto;
+  align-items: center;
+  gap: 14px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.shared-job-row div {
+  display: grid;
+  gap: 4px;
+}
+
+.shared-job-row small {
+  color: var(--text-muted);
+}
+
+.secondary-button {
+  text-decoration: none;
+  text-align: center;
+}
+
+@media (max-width: 760px) {
+  .shared-job-row {
+    grid-template-columns: 1fr 1fr;
+  }
 }

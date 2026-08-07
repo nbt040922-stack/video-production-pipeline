@@ -1,84 +1,51 @@
-# Frontend Architecture
+# Kiến trúc frontend
 
-## Stack
+## Công nghệ
 
-The prototype uses React, TypeScript, Vite, Vitest, Testing Library, and plain CSS. It runs as a browser application and can later be wrapped by Electron or Tauri without changing the UI architecture.
+Frontend dùng React, TypeScript, Vite, Vitest, Testing Library và CSS thuần. Production chạy trong trình duyệt và được FastAPI phục vụ. Không cần Electron/Tauri cho chế độ LAN.
 
-## Screen structure
+## Cấu trúc màn hình
 
-The desktop shell has a compact sidebar, top status bar, and one primary workspace. `Video mới` contains the complete workflow. `Công việc`, `Đầu ra`, and `Cài đặt` are lightweight placeholders.
+App có sidebar gọn, thanh trạng thái và workspace chính:
 
-The primary screen contains:
+1. Màn hình đăng nhập nội bộ.
+2. Form YouTube URL và kiểm tra dữ liệu.
+3. Preview nguồn.
+4. Tiến độ pipeline chín stage.
+5. Card trạng thái Hook Engine và Review Engine.
+6. Preview/download output hoàn tất.
+7. Trang Công việc hiển thị queue và job gần đây dùng chung.
 
-1. YouTube URL form and validation.
-2. Mock source preview.
-3. Nine-stage pipeline progress.
-4. Parallel Hook Engine and Review Engine status cards.
-5. Completed output preview and actions.
-
-## Component hierarchy
+## Cây component
 
 ```text
 App
-└── AppShell
-    ├── Create video form
-    ├── SourcePreview
-    ├── PipelineProgress
-    ├── EngineCards
-    └── FinalOutput
+`-- AppShell
+    |-- Login
+    |-- Create video form
+    |-- SourcePreview
+    |-- PipelineProgress
+    |-- EngineCards
+    |-- FinalOutput
+    `-- Shared Jobs
 ```
 
-`App` owns navigation, URL input, source metadata, and active-job presentation. `useVideoJob` owns job polling and actions. Presentational components receive typed props and contain no mock timers.
+`App` giữ navigation, URL, metadata nguồn, trạng thái kết nối và job đang xem. `useVideoJob` quản lý polling và action. Component trình bày chỉ nhận typed props, không chứa timer mock.
 
-## State model
+## State
 
-Active state remains in React:
+React giữ trang hiện tại, URL/validation, source metadata, active `VideoJob`, readiness, session và thông báo tạm. Job dùng trạng thái backend; danh sách job được polling nên vẫn còn sau reload trình duyệt hoặc restart backend.
 
-- selected page;
-- URL and validation state;
-- source metadata;
-- active `VideoJob`;
-- transient notices.
+## Hợp đồng PipelineClient
 
-Job states are `validating`, `processing`, `completed`, `failed`, and `cancelled`. Stage and engine states are `pending`, `running`, `completed`, `failed`, and `skipped`.
+`PipelineClient` che giấu transport khỏi UI. Các hàm chính gồm kiểm tra nguồn, tạo/đọc/liệt kê/hủy/retry job, đăng nhập/đăng xuất, readiness và URL asset. UI không import engine, gọi Python, chạy FFmpeg hoặc liên hệ YouTube trực tiếp.
 
-Local storage is intentionally omitted. Add it only when job persistence across reloads becomes a product requirement.
+## Mock và backend
 
-## PipelineClient contract
-
-```ts
-interface PipelineClient {
-  inspectSource(youtubeUrl: string): Promise<SourceMetadata>
-  createJob(input: CreateVideoInput): Promise<CreateJobResult>
-  getJob(jobId: string): Promise<VideoJob>
-  cancelJob(jobId: string): Promise<void>
-}
-```
-
-UI code receives this interface. It does not import engine modules, call Python, run FFmpeg, or contact YouTube.
-
-## Mock mode
-
-`MockPipelineClient` stores jobs in memory. A deterministic timer advances one stage per tick and returns cloned snapshots through `getJob`. It supports completion and cancellation.
-
-Development failure fixture:
+Development mặc định dùng `MockPipelineClient` để test UI xác định. Fixture lỗi:
 
 ```text
 https://youtu.be/mock-video?fixture=fail
 ```
 
-This URL fails at the review-writing stage. Retry creates a fresh mock job; reset clears active UI state.
-
-## Future backend integration
-
-Replace the `MockPipelineClient` instance passed to `App` with an HTTP, Electron IPC, or Tauri command adapter implementing `PipelineClient`.
-
-Exact integration points:
-
-- `inspectSource`: downloader metadata endpoint;
-- `createJob`: orchestrator job creation endpoint;
-- `getJob`: job status polling endpoint;
-- `cancelJob`: orchestrator cancellation endpoint;
-- `Open Output Folder`: desktop shell API after Electron/Tauri packaging.
-
-Engine-specific details remain behind the orchestrator. Components and job types should not import either submodule.
+Production luôn chọn `BackendPipelineClient`; tree-shaking loại mock khỏi bundle. Request dùng credentials và `/api` tương đối. Engine detail nằm sau orchestrator; component và type frontend không import submodule.

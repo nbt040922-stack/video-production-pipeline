@@ -1,9 +1,12 @@
 import type { PipelineClient } from './pipeline-client'
 import type {
   CreateJobResult,
+  CurrentUser,
   CreateVideoInput,
   EngineState,
   JobStatus,
+  Readiness,
+  SharedJobSummary,
   SourceMetadata,
   StageStatus,
   VideoJob,
@@ -33,6 +36,7 @@ interface BackendJob {
   youtube_url: string
   status: string
   elapsed_seconds: number
+  queue_position?: number
   stages: BackendStage[]
   source: BackendSource | null
   hook_engine: {
@@ -73,7 +77,7 @@ const pendingSource: SourceMetadata = {
 }
 
 export class BackendPipelineClient implements PipelineClient {
-  constructor(private readonly baseUrl = 'http://127.0.0.1:8000') {}
+  constructor(private readonly baseUrl = '') {}
 
   async inspectSource(): Promise<SourceMetadata> {
     return pendingSource
@@ -91,6 +95,34 @@ export class BackendPipelineClient implements PipelineClient {
     return this.mapJob(await this.request<BackendJob>(`/api/jobs/${jobId}`))
   }
 
+  async listJobs(): Promise<SharedJobSummary[]> {
+    const jobs = await this.request<Array<{
+      job_id: string
+      source_title?: string
+      submitted_at: string
+      status: string
+      progress: number
+      queue_position?: number
+      current_stage?: string
+      final_output_available: boolean
+      error?: string
+      owner_username?: string
+    }>>('/api/jobs')
+    return jobs.map((job) => ({
+      jobId: job.job_id,
+      sourceTitle: job.source_title,
+      submittedAt: job.submitted_at,
+      status: job.status,
+      progress: job.progress,
+      queuePosition: job.queue_position,
+      currentStage: job.current_stage,
+      finalOutputAvailable: job.final_output_available,
+      downloadUrl: job.final_output_available ? this.baseUrl + '/api/jobs/' + job.job_id + '/assets/final/download' : undefined,
+      error: job.error,
+      ownerUsername: job.owner_username,
+    }))
+  }
+
   async cancelJob(jobId: string): Promise<void> {
     await this.request(`/api/jobs/${jobId}/cancel`, { method: 'POST' })
   }
@@ -100,8 +132,42 @@ export class BackendPipelineClient implements PipelineClient {
     return { jobId: job.job_id }
   }
 
-  async openOutputFolder(jobId: string): Promise<void> {
-    await this.request(`/api/jobs/${jobId}/open-folder`, { method: 'POST' })
+  async login(username: string, password: string): Promise<CurrentUser> {
+    const response = await this.request<{ user: BackendUser }>('/api/auth/login', {
+      method: 'POST', body: JSON.stringify({ username, password }),
+    })
+    return this.mapUser(response.user)
+  }
+
+  async logout(): Promise<void> {
+    await this.request('/api/auth/logout', { method: 'POST' })
+  }
+
+  async changePassword(currentPassword: string, newPassword: string): Promise<void> {
+    await this.request('/api/auth/change-password', {
+      method: 'POST',
+      body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
+    })
+  }
+
+  async getCurrentUser(): Promise<CurrentUser | null> {
+    const response = await this.request<{ authenticated: boolean; user: BackendUser | null }>('/api/auth/me')
+    return response.authenticated && response.user ? this.mapUser(response.user) : null
+  }
+
+  async getReadiness(): Promise<Readiness> {
+    const value = await this.request<{
+      status: 'ready' | 'degraded'
+      checks: Record<string, boolean>
+      free_disk_gb: number
+      minimum_free_disk_gb: number
+    }>('/api/readiness')
+    return {
+      status: value.status,
+      checks: value.checks,
+      freeDiskGb: value.free_disk_gb,
+      minimumFreeDiskGb: value.minimum_free_disk_gb,
+    }
   }
 
   private async request<T = unknown>(path: string, init?: RequestInit): Promise<T> {
@@ -109,13 +175,18 @@ export class BackendPipelineClient implements PipelineClient {
     try {
       response = await fetch(`${this.baseUrl}${path}`, {
         ...init,
+        credentials: 'include',
         headers: { 'Content-Type': 'application/json', ...init?.headers },
       })
     } catch {
       throw new Error('Không thể kết nối backend local.')
     }
     const payload = await response.json() as T & BackendError
-    if (!response.ok) throw new Error(payload.error?.message ?? 'Backend trả về lỗi.')
+    if (!response.ok) {
+      const error = new Error(payload.error?.message ?? 'Backend trả về lỗi.')
+      if (response.status === 401) error.name = 'AuthenticationRequiredError'
+      throw error
+    }
     return payload
   }
 
@@ -127,6 +198,7 @@ export class BackendPipelineClient implements PipelineClient {
       status: this.mapJobStatus(job.status),
       elapsedSeconds: job.elapsed_seconds,
       error: job.error?.message,
+      queuePosition: job.queue_position,
       stages: job.stages.map((stage) => ({
         id: stage.id,
         name: stage.name,
@@ -165,9 +237,14 @@ export class BackendPipelineClient implements PipelineClient {
         resolution: job.output.resolution,
         duration: job.output.duration,
         fileSize: job.output.file_size,
+        downloadUrl: this.baseUrl + '/api/jobs/' + job.job_id + '/assets/final/download',
         previewUrl: job.output.preview_url ? `${this.baseUrl}${job.output.preview_url}` : undefined,
       } : undefined,
     }
+  }
+
+  private mapUser(user: BackendUser): CurrentUser {
+    return { id: user.id, username: user.username, displayName: user.display_name, role: user.role }
   }
 
   private mapSource(source: BackendSource): SourceMetadata {
@@ -184,4 +261,11 @@ export class BackendPipelineClient implements PipelineClient {
     if (status === 'queued' || status === 'validating') return 'validating'
     return 'processing'
   }
+}
+
+interface BackendUser {
+  id: string
+  username: string
+  display_name: string
+  role: 'user' | 'admin'
 }

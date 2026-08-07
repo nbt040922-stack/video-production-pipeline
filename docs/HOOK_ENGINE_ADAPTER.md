@@ -1,10 +1,8 @@
 # Hook Engine Adapter
 
-Milestone M04 replaces only the Hook stub. Source ingestion is real; Review and Composer remain deterministic stubs.
+## Hợp đồng hộp đen
 
-## Black-box contract
-
-The adapter uses the Hook Engine CLI in `main.py`; it does not import or duplicate engine logic.
+Adapter dùng Hook Engine CLI trong `main.py`; không import, sửa hoặc sao chép logic engine.
 
 ```text
 thumbnail.jpg
@@ -14,29 +12,22 @@ thumbnail.jpg
   -> final_hook.mp4
 ```
 
-Inspected engine requirements:
+Engine cần Python 3.11+, PyTorch có CUDA, FFmpeg/ffprobe, ComfyUI thường ở `http://127.0.0.1:8188`, workflow/checkpoint Wan và DWPose cục bộ, cùng motion `metadata.json` khớp `HOOK_MOTION_ID`. Runtime không tự tải model hoặc fallback. Không cần `OPENAI_API_KEY` vì adapter truyền thumbnail thẳng cho `generate`.
 
-- Python 3.11+, CUDA-enabled PyTorch, FFmpeg, and ffprobe;
-- a running ComfyUI server, normally `http://127.0.0.1:8188`;
-- local ComfyUI/Wan workflow/checkpoint and DWPose resources;
-- one approved `motion_library/**/metadata.json` matching `HOOK_MOTION_ID`;
-- no model download or fallback during runtime;
-- `OPENAI_API_KEY` is not needed because M04 passes the validated thumbnail directly to `generate` and does not use `phase1 --reconstruct`.
+## Luồng adapter
 
-## Adapter flow
+1. `prepare()` yêu cầu đúng `source/thumbnail.jpg`, kiểm tra JPEG bằng Pillow, kiểm tra CLI/runtime và tạo thư mục tạm riêng.
+2. `run()` gọi `generate` bằng argument array với `shell=False`.
+3. Đọc engine job ID và `raw_candidate.mp4` từ output CLI.
+4. Gọi `phase4` với raw candidate đó.
+5. Chuyển kết quả thành `hook/final_hook.mp4`.
+6. ffprobe kiểm tra khả năng đọc, resolution dương và thời lượng gần 5 giây trong `HOOK_DURATION_TOLERANCE_SECONDS`.
+7. Ghi nguyên tử `hook/metadata.json`.
+8. `cleanup()` chỉ xóa file tạm do adapter tạo; output lỗi hoặc cancelled bị loại.
 
-1. `prepare()` requires the exact job asset `source/thumbnail.jpg`, verifies JPEG readability with Pillow, checks the CLI/runtime, and creates isolated temporary directories.
-2. `run()` invokes `generate` with argument arrays and `shell=False`.
-3. The CLI output identifies the engine job and its `raw_candidate.mp4`.
-4. `run()` invokes `phase4` for the same raw candidate.
-5. The adapter moves the engine result to `hook/final_hook.mp4`.
-6. ffprobe verifies readability, positive resolution, and a duration within `HOOK_DURATION_TOLERANCE_SECONDS` of five seconds.
-7. The adapter atomically writes `hook/metadata.json`.
-8. `cleanup()` removes adapter-owned intermediate directories. Failed or cancelled outputs are removed.
+`status()` trả trạng thái, tiến độ và thông báo. `cancel()` ngắt ComfyUI job và dừng process tree CLI đang chạy.
 
-`status()` exposes adapter state, progress, and message. `cancel()` interrupts ComfyUI and terminates the active CLI process tree.
-
-## Configuration
+## Cấu hình
 
 ```text
 HOOK_ENGINE_PATH=engines/hook-engine
@@ -51,25 +42,21 @@ FFMPEG_PATH=ffmpeg
 FFPROBE_PATH=ffprobe
 ```
 
-The tracked submodule contains engine code. Local ComfyUI models and motion assets are intentionally ignored by the engine repository. Point `HOOK_ENGINE_PATH` at a complete local Hook Engine runtime when those assets are installed elsewhere.
+Submodule chỉ chứa code engine. Model ComfyUI và motion asset cục bộ bị engine ignore. Khi asset nằm ở runtime riêng, trỏ `HOOK_ENGINE_PATH` tới checkout đầy đủ đó.
 
-## Workspace output
+## Output
 
 ```text
 workspace/<job_id>/hook/
-├── final_hook.mp4
-└── metadata.json
+|-- final_hook.mp4
+`-- metadata.json
 ```
 
-Metadata contains parent job ID, engine job ID, motion ID, relative input/output paths, duration, resolution, FPS, and codecs.
+Metadata lưu parent job ID, engine job ID, motion ID, đường dẫn input/output tương đối, thời lượng, resolution, FPS và codec.
 
-## API and UI
+`GET /api/jobs/{job_id}/assets/hook` trả `video/mp4` sau khi Hook hoàn tất. UI polling nhận tiến độ thật, thông báo, thời gian và `preview_url`.
 
-`GET /api/jobs/{job_id}/assets/hook` returns `video/mp4` only after the Hook stage completes. Polling job data includes real Hook progress, message, elapsed time, and `preview_url`. The existing Hook card renders that URL with native video controls.
-
-## Manual smoke test
-
-The parent development script starts Hook ComfyUI automatically and waits for `/system_stats` readiness. On Windows, configure the existing standalone runtime before starting the parent:
+## Smoke test
 
 ```powershell
 $env:HOOK_ENGINE_PATH='D:\AI_hook_engine'
@@ -78,11 +65,6 @@ $env:HOOK_MOTION_ID='motion1'
 .\.venv\Scripts\python.exe scripts\smoke_hook.py "C:\path\to\thumbnail.jpg"
 ```
 
-This is opt-in. Automated tests use a fake CLI runner and never start ComfyUI, use the GPU, or generate a real video.
+Test tự động dùng CLI runner giả; không chạy ComfyUI, GPU hoặc tạo video thật.
 
-## Error codes
-
-- `HOOK_THUMBNAIL_MISSING`, `HOOK_THUMBNAIL_INVALID`
-- `HOOK_ENGINE_NOT_READY`, `HOOK_ENGINE_FAILED`, `HOOK_TIMEOUT`
-- `HOOK_OUTPUT_MISSING`, `HOOK_OUTPUT_INVALID`
-- pipeline cancellation remains `JOB_CANCELLED`
+Mã lỗi: `HOOK_THUMBNAIL_MISSING`, `HOOK_THUMBNAIL_INVALID`, `HOOK_ENGINE_NOT_READY`, `HOOK_ENGINE_FAILED`, `HOOK_TIMEOUT`, `HOOK_OUTPUT_MISSING`, `HOOK_OUTPUT_INVALID`; hủy pipeline dùng `JOB_CANCELLED`.

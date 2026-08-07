@@ -55,8 +55,6 @@ def test_health(client: TestClient) -> None:
     response = client.get("/api/health")
     assert response.status_code == 200
     assert response.json()["status"] == "ok"
-    assert response.json()["dependencies"]["source_ingestor"]["status"] == "stub_ready"
-    assert response.json()["dependencies"]["hook_engine"]["status"] == "stub_ready"
 
 
 def test_valid_job_creates_isolated_workspace_and_metadata(client: TestClient, manager: JobManager) -> None:

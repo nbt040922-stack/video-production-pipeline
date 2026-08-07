@@ -169,6 +169,16 @@ def test_env_config_uses_engine_voice_fallback(tmp_path: Path, monkeypatch: pyte
     assert ReviewEngineConfig.from_env().voice_reference_path == voice
 
 
+def test_missing_openai_configuration_selects_gemini(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("REVIEW_LLM_PROVIDER", "openai")
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("REVIEW_LLM_MODEL", raising=False)
+
+    environment = make_adapter(tmp_path)._engine_environment()
+
+    assert environment["REVIEW_LLM_PROVIDER"] == "gemini"
+
+
 def test_missing_engine_source_and_credentials_are_structured(tmp_path: Path) -> None:
     workspace = make_workspace(tmp_path)
     adapter = make_adapter(tmp_path)

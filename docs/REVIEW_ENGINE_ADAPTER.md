@@ -1,88 +1,80 @@
 # Review Engine Adapter
 
-## Integration method
+## Cách tích hợp
 
-`ReviewEngineAdapter` wraps the Review Engine's supported headless CLI:
+`ReviewEngineAdapter` bọc CLI headless chính thức:
 
 ```text
 review_cli.py run --progress-jsonl
 ```
 
-The adapter passes the parent's existing `source/source.mp4`; the engine downloader is therefore not invoked. Engine logic remains inside the independently versioned submodule.
+Adapter truyền `source/source.mp4` đã có nên downloader của engine không chạy. Logic engine vẫn nằm trong submodule có version độc lập.
 
-## Lifecycle
+## Vòng đời
 
-- `prepare()` validates paths, source metadata, credentials, voice reference, Python, FFmpeg, and ffprobe before paid work.
-- `run()` starts one isolated CLI subprocess, consumes JSONL events, collects artifacts, and validates results.
-- `status()` returns adapter status without secrets.
-- `cancel()` signals the CLI so its runner can execute local and remote cleanup; forced process-tree termination is a last resort.
-- `cleanup()` removes only adapter-owned temporary files. Source, Hook, completed Review artifacts, and logs remain.
+- `prepare()`: kiểm tra đường dẫn, source metadata, credentials, voice reference, Python, FFmpeg và ffprobe trước khi gọi dịch vụ trả phí.
+- `run()`: chạy một CLI process riêng, đọc event JSONL, thu artifact và kiểm tra kết quả.
+- `status()`: trả trạng thái không chứa secret.
+- `cancel()`: báo CLI tự cleanup cục bộ/từ xa; chỉ force-kill process tree khi hết thời gian chờ.
+- `cleanup()`: chỉ xóa file tạm của adapter; giữ Source, Hook, Review hoàn tất và log.
 
-## Configuration
+## Cấu hình
 
-| Variable | Purpose |
+| Biến | Ý nghĩa |
 |---|---|
-| `REVIEW_ENGINE_PATH` | Review Engine checkout containing `review_cli.py` |
-| `REVIEW_ENGINE_PYTHON` | Python runtime with Review Engine dependencies |
-| `REVIEW_ENGINE_TIMEOUT_SECONDS` | Whole Review run timeout; default `14400` |
-| `REVIEW_VOICE_REFERENCE_PATH` | Reference voice file; defaults to `<REVIEW_ENGINE_PATH>/voice.wav` when present |
-| `REVIEW_VOICE_REFERENCE_TEXT` | Optional exact transcript for the reference voice |
-| `GEMINI_API_KEY` | Gemini credential |
-| `TWELVE_LABS_API_KEY` | Twelve Labs credential |
-| `TWELVE_API_KEY` | Compatibility alias when the canonical variable is absent |
-| `USE_PROXY_VIDEO` | Enables Event Window proxy selection; default `true` |
-| `FFMPEG_PATH`, `FFPROBE_PATH` | Media tool overrides |
+| `REVIEW_ENGINE_PATH` | Checkout Review Engine chứa `review_cli.py` |
+| `REVIEW_ENGINE_PYTHON` | Python có dependency Review Engine |
+| `REVIEW_ENGINE_TIMEOUT_SECONDS` | Timeout toàn Review; mặc định `14400` |
+| `REVIEW_VOICE_REFERENCE_PATH` | File giọng mẫu; mặc định `<REVIEW_ENGINE_PATH>/voice.wav` nếu có |
+| `REVIEW_VOICE_REFERENCE_TEXT` | Transcript chính xác tùy chọn của giọng mẫu |
+| `GEMINI_API_KEY` | Credential Gemini |
+| `TWELVE_LABS_API_KEY` | Credential Twelve Labs |
+| `TWELVE_API_KEY` | Alias tương thích khi biến chuẩn không có |
+| `USE_PROXY_VIDEO` | Bật Event Window proxy; mặc định `true` |
+| `FFMPEG_PATH`, `FFPROBE_PATH` | Ghi đè media tool |
 
-OmniVoice remains managed by the Review Engine's `.venv-omnivoice`. Run its documented installer once. Real credentials must never be committed.
+OmniVoice do `.venv-omnivoice` của Review Engine quản lý. Chạy installer của engine một lần. Không commit credentials thật.
 
-## Input and output
+## Input/output
 
-Input: job ID, original YouTube URL, `source/source.mp4`, `source/metadata.json`, and isolated parent workspace.
-
-Stable output:
+Input gồm job ID, YouTube URL gốc, `source/source.mp4`, `source/metadata.json` và workspace riêng.
 
 ```text
 workspace/<job_id>/review/
-├── review.mp4
-├── metadata.json
-├── proxy_metrics.json
-├── window_mapping.json
-├── script/review.json       # when produced
-├── voice/voice.wav          # when produced
-├── timeline/timeline.json   # when produced
-└── logs/engine.jsonl
+|-- review.mp4
+|-- metadata.json
+|-- proxy_metrics.json
+|-- window_mapping.json
+|-- script/review.json
+|-- voice/voice.wav
+|-- timeline/timeline.json
+`-- logs/engine.jsonl
 ```
 
-`metadata.json` is normalized to parent-relative paths and actual ffprobe values. Engine temporary paths are never exposed as the parent contract.
+Ba file trong thư mục con chỉ có khi engine tạo. `metadata.json` dùng đường dẫn tương đối với repo cha và giá trị ffprobe thật; không lộ đường dẫn tạm nội bộ engine.
 
-## Progress mapping
+## Ánh xạ tiến độ
 
-| Engine JSONL stages | Parent/UI stage |
+| Stage JSONL của engine | Stage UI |
 |---|---|
-| `preparing`, `writing_review` | Writing review |
-| `generating_voice`, `transcribing` | Generating voice |
-| `selecting_windows`, `indexing_proxy`, `searching_scenes`, `mapping_timeline` | Selecting footage |
-| `rendering_review`, `validating_output` | Rendering review |
+| `preparing`, `writing_review` | Viết bài đánh giá |
+| `generating_voice`, `transcribing` | Tạo giọng đọc |
+| `selecting_windows`, `indexing_proxy`, `searching_scenes`, `mapping_timeline` | Chọn cảnh |
+| `rendering_review`, `validating_output` | Dựng video review |
 
-Progress comes only from CLI JSONL events. No frontend timer estimates Review progress.
+Tiến độ chỉ đến từ event JSONL thật, không dùng timer giả ở frontend.
 
-## Validation
+## Kiểm tra, hủy và khôi phục
 
-The adapter independently checks a readable, non-empty video with video and audio streams, positive duration/resolution/FPS, codecs, finite proxy metrics, fallback consistency, zero mapping errors on successful proxy runs, ordered source/proxy windows, and mapping duration tolerance. A valid full-source fallback with 0% savings is accepted and recorded.
+Adapter kiểm tra video đọc được, không rỗng, có video/audio stream, thời lượng/resolution/FPS dương, codec, proxy metric hữu hạn, fallback nhất quán, mapping không lỗi khi proxy thành công, window đúng thứ tự và sai số thời lượng hợp lệ. Full-source fallback hợp lệ với 0% tiết kiệm vẫn được chấp nhận và ghi nhận.
 
-## Cancellation, timeout, and recovery
+Hủy/timeout báo CLI trước để `finally` xóa Twelve index tạm. Nếu CLI không thoát trong 10 giây mới dừng process tree. Restart chuyển job chạy dở thành `INTERRUPTED`, không tự gọi lại dịch vụ trả phí.
 
-Cancellation and timeout first signal the CLI, allowing the engine's `finally` cleanup to request deletion of its temporary Twelve index. If the child does not exit within ten seconds, the process tree is terminated. Logs and completed artifacts remain; remote cleanup is not claimed unless the engine reports it.
+Mã lỗi ổn định: `REVIEW_ENGINE_NOT_CONFIGURED`, `REVIEW_ENGINE_ENTRYPOINT_MISSING`, `REVIEW_ENGINE_CREDENTIALS_MISSING`, `REVIEW_ENGINE_TIMEOUT`, `GEMINI_FAILED`, `OMNIVOICE_FAILED`, `TWELVE_INDEX_FAILED`, `MARENGO_SEARCH_FAILED`, `PROXY_MAPPING_FAILED`, `REVIEW_RENDER_FAILED`, `REVIEW_OUTPUT_INVALID`, `REVIEW_CANCELLED`.
 
-Restart recovery marks an in-progress persisted job `INTERRUPTED`; it never reruns paid work automatically.
+## Job thật thủ công
 
-## Error mapping
-
-The parent exposes Vietnamese messages with stable codes: `REVIEW_ENGINE_NOT_CONFIGURED`, `REVIEW_ENGINE_ENTRYPOINT_MISSING`, `REVIEW_ENGINE_CREDENTIALS_MISSING`, `REVIEW_ENGINE_TIMEOUT`, `GEMINI_FAILED`, `OMNIVOICE_FAILED`, `TWELVE_INDEX_FAILED`, `MARENGO_SEARCH_FAILED`, `PROXY_MAPPING_FAILED`, `REVIEW_RENDER_FAILED`, `REVIEW_OUTPUT_INVALID`, and `REVIEW_CANCELLED`. Technical JSONL stays under `review/logs/`; credentials are never logged or returned.
-
-## Manual real job
-
-This calls paid external services. Confirm Gemini and Twelve Labs pricing/quota first.
+Lệnh này gọi dịch vụ trả phí. Kiểm tra giá/quota Gemini và Twelve Labs trước.
 
 ```powershell
 $env:REVIEW_ENGINE_PATH='F:\CA_NHAN\video-short-workflow'
@@ -95,6 +87,4 @@ $env:VITE_PIPELINE_MODE='backend'
 .\scripts\dev.ps1
 ```
 
-Paste one YouTube URL in the existing UI. After completion, inspect `workspace/<job_id>/review/metadata.json` and `proxy_metrics.json` for source duration, proxy duration, savings, fallback, runtime, video duration, mapping errors, and final status.
-
-Default tests use a fake local CLI and never call paid services. No automatic paid-service retry is added by the parent.
+Test mặc định dùng CLI giả cục bộ, không gọi dịch vụ trả phí và không tự retry dịch vụ trả phí.
